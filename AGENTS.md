@@ -1,5 +1,16 @@
 # Repository Guidelines
 
+## Simplicity First
+- Keep the codebase small: add only files that serve a clear purpose.
+- Prefer readability and maintainability over cleverness or abstractions.
+- Use built-in Ansible modules and features; avoid extra collections unless required.
+- Keep templates simple with minimal Jinja2 logic; move logic into variables when possible.
+- Avoid deep includes/imports; split by clear concern but keep the structure shallow.
+- Be explicit over generic: a few clear tasks beat a complex loop when it aids clarity.
+- Minimize custom plugins/filters; only introduce them when absolutely necessary.
+- Optimize for idempotence and clarity: set `changed_when`/`failed_when` where helpful.
+- Document intent briefly in task names; keep comments short and practical.
+
 ## Project Structure & Module Organization
 - `site.yml`: Primary playbook orchestrating the DSM migration.
 - `inventory.yml`: Hosts grouped as `dsm_source` and `dsm_target`.
@@ -38,4 +49,3 @@
 - Do not commit secrets. Move `dsm_password` to Ansible Vault (e.g., `ansible-vault create group_vars/all/vault.yml`) and run with `--ask-vault-pass` or a vault ID.
 - Prefer non-root SSH users with `become: true` (inventory shows `ansible_user: root` only as an example).
 - Keep inventory hostnames accurate; the play relies on single hosts in `dsm_source` and `dsm_target`.
-
