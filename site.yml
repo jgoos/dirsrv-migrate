@@ -1,0 +1,24 @@
+---
+- name: Migrate LDAP data from RHDS 11 to RHDS 12
+  hosts: all
+  become: true
+  vars:
+    dsm_password: ""
+  tasks:
+    - name: Ensure we have exactly one server in hostgroup 'dsm_source'
+      ansible.builtin.assert:
+        that: groups['dsm_source'] | length == 1
+        fail_msg: |
+          ERROR: The 'dsm_source' group must contain exactly one host. It currently contains {{ groups['dsm_source'] | length }} host(s).
+      run_once: true
+
+    - name: Ensure we have exactly one server in hostgroup 'dsm_target'
+      ansible.builtin.assert:
+        that: groups['dsm_target'] | length == 1
+        fail_msg: |
+          ERROR: The 'dsm_target' group must contain exactly one host. It currently contains {{ groups['dsm_target'] | length }} host(s).
+      run_once: true
+
+    - name: Include the dsm role
+      ansible.builtin.include_role:
+        name: dsm

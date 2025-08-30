@@ -1,0 +1,75 @@
+---
+- name: Tasks in source.yml
+  ansible.builtin.debug:
+    msg: "Tasks in source.yml"
+
+- name: Stop LDAP instance
+  ansible.builtin.command:
+    argv:
+      - /sbin/dsctl
+      - "{{ dsm_instance }}"
+      - stop
+  changed_when: false
+
+- name: Dump LDAP instance to LDIF
+  ansible.builtin.command:
+    argv:
+      - /sbin/dsctl
+      - "{{ dsm_instance }}"
+      - db2ldif
+      - "{{ item }}"
+      - "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
+  loop: "{{ dsm_backends.keys() | list }}"
+  changed_when: false
+
+- name: Fetch the LDIF dumps
+  ansible.builtin.fetch:
+    dest: "{{ dsm_tempdir }}/migration-{{ item }}.ldif"
+    flat: true
+    src: "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
+  loop: "{{ dsm_backends.keys() | list }}"
+
+- name: Fix permissions on LDIF dumps
+  ansible.builtin.file:
+    path: "{{ dsm_tempdir }}/migration-{{ item }}.ldif"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  loop: "{{ dsm_backends.keys() | list }}"
+
+- name: Create archive of instance config
+  ansible.builtin.command:
+    argv:
+      - /bin/tar
+      - cjf
+      - "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+      - "{{ dsm_base_config }}"
+  changed_when: false
+
+- name: Fetch the config archive
+  ansible.builtin.fetch:
+    src: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    dest: "{{ dsm_tempdir }}/"
+    flat: true
+
+- name: Fix permissions on config archive
+  ansible.builtin.file:
+    path: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+
+- name: Start LDAP instance
+  ansible.builtin.command:
+    argv:
+      - /sbin/dsctl
+      - "{{ dsm_instance }}"
+      - start
+  changed_when: false
+
+- name: Remove archive of instance config on source
+  ansible.builtin.file:
+    path: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    state: absent
+
+

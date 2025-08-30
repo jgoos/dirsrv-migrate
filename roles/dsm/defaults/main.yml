@@ -1,0 +1,21 @@
+---
+# vars file for dsm (defaults - can be overridden by inventory)
+
+dsm_instance: dir
+dsm_tempdir: /var/tmp
+
+dsm_base_var: "/var/lib/dirsrv/slapd-{{ dsm_instance }}"
+dsm_base_varldif: "/var/lib/dirsrv/slapd-{{ dsm_instance }}/ldif"
+dsm_base_config: "/etc/dirsrv/slapd-{{ dsm_instance }}"
+dsm_base_log: "/var/log/dirsrv/slapd-{{ dsm_instance }}"
+dsm_dse_ldif: "etc/dirsrv/slapd-{{ dsm_instance }}/dse.ldif"
+
+dsm_backends:
+  userroot:
+    suffix: "o=asml"
+
+dsm_pkgs:
+  - 389-ds-base
+
+# change to encrypted string
+# dsm_password: "changeme_please"
