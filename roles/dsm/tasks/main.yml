@@ -10,4 +10,3 @@
   ansible.builtin.include_tasks:
     file: dsm_target.yml
   when: inventory_hostname in groups['dsm_target']
-
