@@ -1,0 +1,7 @@
+---
+# Define the source → target mapping for RHDS migrations
+
+# Example mapping; replace with your 35 pairs
+dsm_host_map:
+  rhds11.example.com: rhds12.example.com
+

@@ -1,64 +1,12 @@
 ---
-- name: Iteration
-  ansible.builtin.debug:
-    msg: "dsconf -D 'cn=Directory Manager' ldap://localhost:389 backend create --suffix={{ item.value.suffix }} --be-name={{ item.key }}"
-  loop: "{{ dsm_backends | dict2items }}"
-
-- name: Key
-  ansible.builtin.debug:
-    var: (dsm_backends.values() | list)[0].suffix
-
-# - name: Install packages
-#   ansible.builtin.dnf:
-#     name: "{{ dsm_pkgs }}"
-#     state: present
-
 - name: Copy config archive to target node
   ansible.builtin.copy:
     dest: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
     group: dirsrv
     mode: '0640'
     owner: dirsrv
-    src: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    src: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
 
-# - name: Setup template for instance creation
-#   ansible.builtin.template:
-#     dest: "{{ dsm_tempdir }}/{{ dsm_instance }}.inf"
-#     group: dirsrv
-#     mode: '0640'
-#     owner: dirsrv
-#     src: slapd.inf.j2
-
-- name: Extract config data from archive
-  ansible.builtin.command:
-    argv:
-      - /bin/tar
-      - xf
-      - "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
-      - -C
-      - "{{ dsm_tempdir }}"
-      - "{{ dsm_dse_ldif }}"
-  changed_when: false
-
-- name: Remove replication agreements
-  ansible.builtin.replace:
-    backup: true
-    regexp: "(?m)^dn: cn=replica,.*?(?=\n(?!(?s).*?^dn: )|$)"
-    replace: ""
-    path: "{{ dsm_tempdir }}/{{ dsm_dse_ldif }}"
-
-- name: Update server name in template dse.ldif
-  ansible.builtin.replace:
-    regexp: "{{ groups['dsm_source'][0] }}"
-    replace: "{{ inventory_hostname }}"
-    path: "{{ dsm_tempdir }}/{{ dsm_dse_ldif }}"
-
-# - name: Create instance
-#   ansible.builtin.command:
-#     argv:
-#       - /usr/sbin/dscreate
-#       - from-file
-#       - "{{ dsm_tempdir }}/{{ dsm_instance }}.inf"
 
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
@@ -67,8 +15,20 @@
     mode: '0640'
     owner: dirsrv
     setype: dirsrv_var_lib_t
-    src: "{{ dsm_tempdir }}/migration-{{ item }}.ldif"
+    src: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/migration-{{ item }}.ldif"
   loop: "{{ dsm_backends.keys() | list }}"
+
+- name: Build list of target LDIF file paths
+  ansible.builtin.set_fact:
+    dsm_ldif_files: "{{ dsm_backends.keys() | list | map('regex_replace', '^(.*)$', dsm_base_varldif ~ '/migration-\\1.ldif') | list }}"
+
+- name: Clean exported data LDIFs with configured patterns
+  ansible.builtin.replace:
+    backup: true
+    path: "{{ item.0 }}"
+    regexp: "{{ item.1.regexp }}"
+    replace: "{{ item.1.replace | default('') }}"
+  loop: "{{ (dsm_ldif_files | default([])) | product(dsm_cleanup_patterns_data | default([])) | list }}"
 
 - name: Copy schema into place
   ansible.builtin.command:
@@ -77,7 +37,8 @@
       - xf
       - "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
       - -C
-      - etc/dirsrv/slapd-{{ dsm_instance }}/schema/
+      - /
+      - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/"
   changed_when: false
 
 - name: Restart instance
@@ -87,22 +48,6 @@
       - "{{ dsm_instance }}"
       - restart
   changed_when: false
-
-# - name: Create import script
-#   ansible.builtin.template:
-#     dest: /var/tmp/import_data.bash
-#     group: root
-#     mode: '0750'
-#     owner: root
-#     src: import_data.bash.j2
-
-# - name: Import data
-#   ansible.builtin.shell: >
-#     "/usr/sbin/dsconf -D 'cn=Directory Manager' -w {{ dsm_password }} \
-#     ldap://localhost:389 backend import {{ item }} {{ dsm_tempdir }}/migration-{{ item }}.ldif"
-#   loop: "{{ dsm_backends.keys() | list }}"
-#   args:
-#     executable: /bin/bash
 
 - name: Import data
   ansible.builtin.command:
@@ -119,5 +64,3 @@
       - "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
-
-

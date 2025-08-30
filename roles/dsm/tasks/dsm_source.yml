@@ -1,7 +1,11 @@
 ---
-- name: Tasks in source.yml
-  ansible.builtin.debug:
-    msg: "Tasks in source.yml"
+- name: Ensure local artifact directory exists for this source
+  ansible.builtin.file:
+    path: "{{ dsm_artifact_root }}/{{ inventory_hostname }}"
+    state: directory
+    mode: "0750"
+  connection: local
+  delegate_to: localhost
 
 - name: Stop LDAP instance
   ansible.builtin.command:
@@ -24,14 +28,14 @@
 
 - name: Fetch the LDIF dumps
   ansible.builtin.fetch:
-    dest: "{{ dsm_tempdir }}/migration-{{ item }}.ldif"
+    dest: "{{ dsm_artifact_root }}/{{ inventory_hostname }}/migration-{{ item }}.ldif"
     flat: true
     src: "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
   loop: "{{ dsm_backends.keys() | list }}"
 
 - name: Fix permissions on LDIF dumps
   ansible.builtin.file:
-    path: "{{ dsm_tempdir }}/migration-{{ item }}.ldif"
+    path: "{{ dsm_artifact_root }}/{{ inventory_hostname }}/migration-{{ item }}.ldif"
     mode: "0640"
   connection: local
   delegate_to: localhost
@@ -49,12 +53,12 @@
 - name: Fetch the config archive
   ansible.builtin.fetch:
     src: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
-    dest: "{{ dsm_tempdir }}/"
+    dest: "{{ dsm_artifact_root }}/{{ inventory_hostname }}/"
     flat: true
 
 - name: Fix permissions on config archive
   ansible.builtin.file:
-    path: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    path: "{{ dsm_artifact_root }}/{{ inventory_hostname }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
     mode: "0640"
   connection: local
   delegate_to: localhost
@@ -71,5 +75,3 @@
   ansible.builtin.file:
     path: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
     state: absent
-
-

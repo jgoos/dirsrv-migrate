@@ -1,24 +1,84 @@
 ---
-- name: Migrate LDAP data from RHDS 11 to RHDS 12
-  hosts: all
-  become: true
-  vars:
-    dsm_password: ""
+- name: Validate source→target mapping
+  hosts: localhost
+  gather_facts: false
   tasks:
-    - name: Ensure we have exactly one server in hostgroup 'dsm_source'
+    - name: Ensure mapping is defined
       ansible.builtin.assert:
-        that: groups['dsm_source'] | length == 1
-        fail_msg: |
-          ERROR: The 'dsm_source' group must contain exactly one host. It currently contains {{ groups['dsm_source'] | length }} host(s).
-      run_once: true
+        that:
+          - dsm_host_map is mapping
+          - dsm_host_map | length > 0
+        fail_msg: "Define 'dsm_host_map' in group_vars with source→target pairs"
 
-    - name: Ensure we have exactly one server in hostgroup 'dsm_target'
+    - name: Ensure all sources are mapped and targets exist
       ansible.builtin.assert:
-        that: groups['dsm_target'] | length == 1
-        fail_msg: |
-          ERROR: The 'dsm_target' group must contain exactly one host. It currently contains {{ groups['dsm_target'] | length }} host(s).
-      run_once: true
+        that:
+          - (dsm_host_map.keys() | difference(groups['dsm_source'])) | length == 0
+          - (dsm_host_map.values() | difference(groups['dsm_target'])) | length == 0
+        fail_msg: "All map keys must be in dsm_source and values in dsm_target"
 
-    - name: Include the dsm role
-      ansible.builtin.include_role:
-        name: dsm
+    - name: Ensure 1:1 mapping and expected counts
+      ansible.builtin.assert:
+        that:
+          - dsm_host_map | length == groups['dsm_source'] | length
+          - (dsm_host_map.values() | unique | length) == (dsm_host_map | length)
+        fail_msg: "Mapping must be 1:1 and cover all sources"
+
+- name: Dump LDIF and config from RHDS 11 sources
+  hosts: dsm_source
+  become: true
+  roles:
+    - dsm
+
+- name: Import data into RHDS 12 targets
+  hosts: dsm_target
+  become: true
+  pre_tasks:
+    - name: Determine mapped source host candidates
+      ansible.builtin.set_fact:
+        dsm_source_candidates: "{{ dsm_host_map | dict2items | selectattr('value', 'equalto', inventory_hostname) | map(attribute='key') | list }}"
+
+    - name: Select mapped source host for this target
+      ansible.builtin.set_fact:
+        dsm_source_host: "{{ dsm_source_candidates | first }}"
+
+    - name: Assert mapped source host is found
+      ansible.builtin.assert:
+        that:
+          - dsm_source_host is defined
+          - dsm_source_host in groups['dsm_source']
+        fail_msg: "No matching source host found for target {{ inventory_hostname }}"
+
+    - name: Build expected artifact list (controller)
+      ansible.builtin.set_fact:
+        dsm_expected_ldifs: >-
+          {{ dsm_backends.keys() | list
+             | map('regex_replace', '^(.*)$', dsm_artifact_root ~ '/' ~ dsm_source_host ~ '/migration-\\1.ldif')
+             | list }}
+        dsm_expected_config: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+
+    - name: Stat expected artifacts on controller
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ [dsm_expected_config] + dsm_expected_ldifs }}"
+      register: dsm_artifacts_stat
+      connection: local
+      delegate_to: localhost
+
+    - name: Build missing artifact list (controller)
+      ansible.builtin.set_fact:
+        dsm_missing_artifacts: >-
+          {{ ([dsm_expected_config] + dsm_expected_ldifs)
+             | zip(dsm_artifacts_stat.results)
+             | selectattr('1.stat.exists', 'equalto', false)
+             | map('first')
+             | list }}
+
+    - name: Assert all expected artifacts exist on controller
+      ansible.builtin.assert:
+        that:
+          - (dsm_artifacts_stat.results | map(attribute='stat.exists') | list | min) | bool
+        fail_msg: >-
+          Missing artifacts on controller: {{ dsm_missing_artifacts }}
+  roles:
+    - dsm

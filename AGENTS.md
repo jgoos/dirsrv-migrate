@@ -28,6 +28,13 @@
 - Target a subset: `ansible-playbook -i inventory.yml site.yml --limit dsm_source`
 - Set secrets at runtime: `ansible-playbook -i inventory.yml site.yml -e @group_vars/all/vault.yml`
 
+## Vault Usage
+- Store secrets in `group_vars/all/vault.yml` (encrypted with Ansible Vault).
+- Create/update: `ansible-vault edit group_vars/all/vault.yml` and set `dsm_password: <secret>`.
+- Run with vault password prompt: `ansible-playbook -i inventory.yml site.yml --ask-vault-pass`.
+- Or with vault IDs: `ansible-playbook -i inventory.yml site.yml --vault-id dev@prompt`.
+- Note: `.gitignore` excludes `.ansible/` artifacts and `group_vars/all/vault.yml`.
+
 ## Coding Style & Naming Conventions
 - YAML: 2-space indent, no tabs; keys lower_snake_case.
 - Tasks: clear, imperative `name`; prefer FQCN modules (e.g., `ansible.builtin.command`).
