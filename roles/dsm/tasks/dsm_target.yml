@@ -30,16 +30,14 @@
     replace: "{{ item.1.replace | default('') }}"
   loop: "{{ (dsm_ldif_files | default([])) | product(dsm_cleanup_patterns_data | default([])) | list }}"
 
-- name: Copy schema into place
-  ansible.builtin.command:
-    argv:
-      - /bin/tar
-      - xf
-      - "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
-      - -C
-      - /
-      - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/"
-  changed_when: false
+- name: Extract schema into place
+  ansible.builtin.unarchive:
+    src: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    dest: /
+    remote_src: true
+    include:
+      - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/*"
+    creates: "/etc/dirsrv/slapd-{{ dsm_instance }}/schema"
 
 - name: Restart instance
   ansible.builtin.systemd:
