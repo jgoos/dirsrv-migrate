@@ -1,26 +1,26 @@
 ---
 - name: Copy config archive to target node
   ansible.builtin.copy:
-    dest: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    dest: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
     group: dirsrv
     mode: '0640'
     owner: dirsrv
-    src: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    src: "{{ [dsm_artifact_root, dsm_source_host, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
 
 
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
-    dest: "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
+    dest: "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
     group: dirsrv
     mode: '0640'
     owner: dirsrv
     setype: dirsrv_var_lib_t
-    src: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/migration-{{ item }}.ldif"
+    src: "{{ [dsm_artifact_root, dsm_source_host, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
 
 - name: Build list of target LDIF file paths
   ansible.builtin.set_fact:
-    dsm_ldif_files: "{{ dsm_backends.keys() | list | map('regex_replace', '^(.*)$', dsm_base_varldif ~ '/migration-\\1.ldif') | list }}"
+    dsm_ldif_files: "{{ dsm_backends.keys() | list | map('regex_replace', '^(.*)$', ([dsm_base_varldif, 'migration-' ~ '\\1' ~ '.ldif'] | path_join)) | list }}"
 
 - name: Clean exported data LDIFs with configured patterns
   ansible.builtin.replace:
@@ -32,7 +32,7 @@
 
 - name: Extract schema into place
   ansible.builtin.unarchive:
-    src: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+    src: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
     dest: /
     remote_src: true
     include:
@@ -56,6 +56,6 @@
       - backend
       - import
       - "{{ item }}"
-      - "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
+      - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
