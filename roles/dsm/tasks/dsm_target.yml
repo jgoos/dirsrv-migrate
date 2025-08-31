@@ -37,7 +37,7 @@
     remote_src: true
     include:
       - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/*"
-    creates: "/etc/dirsrv/slapd-{{ dsm_instance }}/schema"
+    #creates: "/etc/dirsrv/slapd-{{ dsm_instance }}/schema"
 
 - name: Restart instance
   ansible.builtin.systemd:
