@@ -42,12 +42,9 @@
   changed_when: false
 
 - name: Restart instance
-  ansible.builtin.command:
-    argv:
-      - /usr/sbin/dsctl
-      - "{{ dsm_instance }}"
-      - restart
-  changed_when: false
+  ansible.builtin.systemd:
+    name: "dirsrv@{{ dsm_instance }}"
+    state: restarted
 
 - name: Import data
   ansible.builtin.command:
