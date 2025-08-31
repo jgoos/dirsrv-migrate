@@ -8,12 +8,9 @@
   delegate_to: localhost
 
 - name: Stop LDAP instance
-  ansible.builtin.command:
-    argv:
-      - /sbin/dsctl
-      - "{{ dsm_instance }}"
-      - stop
-  changed_when: false
+  ansible.builtin.systemd:
+    name: "dirsrv@{{ dsm_instance }}"
+    state: stopped
 
 - name: Dump LDAP instance to LDIF
   ansible.builtin.command:
@@ -64,12 +61,9 @@
   delegate_to: localhost
 
 - name: Start LDAP instance
-  ansible.builtin.command:
-    argv:
-      - /sbin/dsctl
-      - "{{ dsm_instance }}"
-      - start
-  changed_when: false
+  ansible.builtin.systemd:
+    name: "dirsrv@{{ dsm_instance }}"
+    state: started
 
 - name: Remove archive of instance config on source
   ansible.builtin.file:
