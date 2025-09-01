@@ -27,35 +27,6 @@
 - name: Dump LDIF and config from RHDS 11 sources
   hosts: dsm_source
   become: true
-  pre_tasks:
-    - name: Preflight | Define executable candidates (dsconf)
-      ansible.builtin.set_fact:
-        dsm_dsconf_candidates:
-          - /usr/sbin/dsconf
-          - /sbin/dsconf
-
-    - name: Preflight | Stat dsconf candidates
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop: "{{ dsm_dsconf_candidates }}"
-      register: dsm_src_dsconf_stats
-
-    - name: Preflight | Assert dsconf is present on source
-      ansible.builtin.assert:
-        that:
-          - (dsm_src_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
-        fail_msg: "dsconf not found on source. Install 389-DS tools."
-
-    - name: Detect dsconf --suffix support on source (export)
-      ansible.builtin.command:
-        argv: ["/usr/sbin/dsconf", "{{ dsm_instance }}", "backend", "export", "--help"]
-      register: dsm_src_dsconf_export_help
-      changed_when: false
-      failed_when: false
-
-    - name: Set dsconf suffix support fact (source)
-      ansible.builtin.set_fact:
-        dsm_dsconf_supports_suffix: "{{ (dsm_src_dsconf_export_help.stdout + ' ' + dsm_src_dsconf_export_help.stderr) is search('\\-\\-suffix') }}"
   roles:
     - dsm
 
@@ -63,35 +34,6 @@
   hosts: dsm_target
   become: true
   pre_tasks:
-    - name: Preflight | Define executable candidates (dsconf)
-      ansible.builtin.set_fact:
-        dsm_dsconf_candidates:
-          - /usr/sbin/dsconf
-          - /sbin/dsconf
-
-    - name: Preflight | Stat dsconf candidates
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop: "{{ dsm_dsconf_candidates }}"
-      register: dsm_dsconf_stats
-
-    - name: Preflight | Assert dsconf is present on target
-      ansible.builtin.assert:
-        that:
-          - (dsm_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
-        fail_msg: "dsconf not found. Ensure 389-DS is installed by the base role."
-
-    - name: Detect dsconf --suffix support on target (import)
-      ansible.builtin.command:
-        argv: ["/usr/sbin/dsconf", "{{ dsm_instance }}", "backend", "import", "--help"]
-      register: dsm_tgt_dsconf_import_help
-      changed_when: false
-      failed_when: false
-
-    - name: Set dsconf suffix support fact (target)
-      ansible.builtin.set_fact:
-        dsm_dsconf_supports_suffix: "{{ (dsm_tgt_dsconf_import_help.stdout + ' ' + dsm_tgt_dsconf_import_help.stderr) is search('\\-\\-suffix') }}"
-
     - name: Determine mapped source host candidates
       ansible.builtin.set_fact:
         dsm_source_candidates: "{{ dsm_host_map | dict2items | selectattr('value', 'equalto', inventory_hostname) | map(attribute='key') | list }}"

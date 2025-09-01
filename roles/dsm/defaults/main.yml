@@ -36,8 +36,19 @@ dsm_artifact_root_effective: >-
 # Control service management (helpful in containers without systemd)
 dsm_manage_service: true
 
-# Path to dsctl (will be detected in site.yml pre_tasks; default works on many systems)
-dsm_dsctl_bin: /sbin/dsctl
+# DEPRECATED: dsm_dsctl_bin is no longer used by this role. Kept for backwards
+# compatibility only; will be removed in a future revision.
+dsm_dsctl_bin: /sbin/dsctl  # deprecated, unused
+
+# LDAP connection URIs (override per environment)
+# TCP URI used by ldapsearch fallback or external tools
+dsm_ldap_tcp_uri: "ldap://localhost:389"
+# LDAPI socket path and URI (constructed by default for standard installs)
+dsm_ldapi_socket_path: "/var/run/dirsrv/slapd-{{ dsm_instance }}.socket"
+dsm_ldapi_uri: "ldapi://{{ dsm_ldapi_socket_path | urlencode }}"
+
+# dsconf operation timeout (seconds). Applied when supported by dsconf.
+dsm_dsconf_timeout: 600
 
 # Export method per vendor guidance (RHDS 12)
 # Options: 'dsconf' (recommended), 'ldapsearch' (test/container fallback)

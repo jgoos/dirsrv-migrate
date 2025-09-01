@@ -164,6 +164,21 @@ Run (prebuilt 389-DS + Podman connection):
 
 Re-run safely: artifacts land under `.ansible/artifacts/compose-dev/rhds11/…`. You can change `dsm_artifact_run` in `test/compose_vars.yml` to keep multiple snapshots.
 
+## Runtime Variables (Tuning)
+
+These variables can be overridden in `group_vars`, inventory, or at runtime with `-e`:
+
+- `dsm_ldap_tcp_uri`: TCP LDAP URI used by ldapsearch fallback or external tools. Default: `ldap://localhost:389`.
+- `dsm_ldapi_socket_path`: Local LDAPI socket path for the instance. Default: `/var/run/dirsrv/slapd-<instance>.socket`.
+- `dsm_ldapi_uri`: Computed LDAPI URI based on `dsm_ldapi_socket_path`. Default: `ldapi://%2Fvar%2Frun%2Fdirsrv%2Fslapd-<instance>.socket`.
+- `dsm_dsconf_timeout`: Seconds for `dsconf` export/import operations when supported (applies `--timeout <seconds>`). Default: `600`.
+- `dsm_collect_config`: Whether to collect and transfer server config archive (used for schema extraction). Default: `true`. In container tests: `false`.
+- `dsm_manage_source_backends`: Test-only; allow creating the source backend/suffix if missing. Default: `false` (prod safe). In container tests: `true`.
+
+Notes:
+- The role auto-detects `dsconf` path and capabilities (e.g., `--suffix`, `--timeout`) per host; when supported, timeout is applied automatically.
+- In production, `dsm_manage_source_backends` should remain `false` so the source is not mutated by the role.
+
 ## Commands Reference (illustrative)
 - Index management:
   - List: `dsconf <inst> backend index list <be-name>`
