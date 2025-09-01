@@ -13,7 +13,7 @@
 
 ## Project Structure & Module Organization
 - `site.yml`: Primary playbook orchestrating the DSM migration.
-- `inventory.yml`: Hosts grouped as `dsm_source` and `dsm_target`.
+- `inventory.yml`: Hosts grouped as `dsm_source` and `dsm_target` (group names; not variables).
 - `roles/dirsrv_migrate/`: Role implementing migration logic
   - `tasks/`: `main.yml`, `source.yml`, `target.yml`
   - `defaults/main.yml`: Default vars (override in inventory/group_vars)
@@ -38,7 +38,7 @@
 ## Coding Style & Naming Conventions
 - YAML: 2-space indent, no tabs; keys lower_snake_case.
 - Tasks: clear, imperative `name`; prefer FQCN modules (e.g., `ansible.builtin.command`).
-- Variables: define defaults in `roles/dirsrv_migrate/defaults/main.yml`; override via inventory/group_vars.
+- Variables: define defaults in `roles/dirsrv_migrate/defaults/main.yml`; override via inventory/group_vars. Use `dirsrv_*` variables only; do not use `dsm_*` variables.
 - Templates: Jinja2 with spaced braces (`{{ var }}`) and minimal logic.
 - Files: keep role entrypoints as `main.yml`; split by concern (e.g., `source.yml`).
 
