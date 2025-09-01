@@ -28,7 +28,7 @@
   hosts: dsm_source
   become: true
   roles:
-    - dsm
+    - dirsrv_migrate
 
 - name: Import data into RHDS 12 targets
   hosts: dsm_target
@@ -106,4 +106,4 @@
           Missing artifacts on controller: {{ dsm_missing_artifacts }}
       when: not ansible_check_mode
   roles:
-    - dsm
+    - dirsrv_migrate
