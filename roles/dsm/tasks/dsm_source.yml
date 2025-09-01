@@ -41,17 +41,33 @@
   failed_when: false
 
 - name: Export LDIF via dsconf backend export (online)
-  ansible.builtin.command:
-    argv:
-      - /usr/sbin/dsconf
-      - "{{ dsm_instance }}"
-      - backend
-      - export
-      - -l
-      - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
-      - "{{ dsm_backends[item].suffix }}"
-  loop: "{{ dsm_backends.keys() | list }}"
-  changed_when: false
+  block:
+    - name: Export via dsconf using --suffix (preferred)
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/dsconf
+          - "{{ dsm_instance }}"
+          - backend
+          - export
+          - --suffix
+          - "{{ dsm_backends[item].suffix }}"
+          - -l
+          - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+      loop: "{{ dsm_backends.keys() | list }}"
+      changed_when: false
+  rescue:
+    - name: Export via dsconf using positional suffix (fallback)
+      ansible.builtin.command:
+        argv:
+          - /usr/sbin/dsconf
+          - "{{ dsm_instance }}"
+          - backend
+          - export
+          - -l
+          - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+          - "{{ dsm_backends[item].suffix }}"
+      loop: "{{ dsm_backends.keys() | list }}"
+      changed_when: false
   when: dsm_export_method == 'dsconf'
 
       
