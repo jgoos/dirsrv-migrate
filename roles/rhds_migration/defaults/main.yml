@@ -1,6 +1,8 @@
 ---
 # Default variables for DSM role.
 # Override via inventory/group_vars. Secrets (e.g., dsm_password) must come from Ansible Vault.
+# Note: Package installation is handled by a separate role; this role assumes
+# required packages (e.g., 389-ds-base) are already present on targets.
 
 dsm_instance: dir
 dsm_tempdir: /var/tmp
@@ -13,11 +15,7 @@ dsm_dse_ldif: "etc/dirsrv/slapd-{{ dsm_instance }}/dse.ldif"
 
 dsm_backends:
   userroot:
-    suffix: "o=asml"
-
-dsm_pkgs:
-  - 389-ds-base
-
+    suffix: "o=example"
 
 # Local artifact staging for migrations (on controller)
 dsm_artifact_root: "{{ playbook_dir }}/.ansible/artifacts"

@@ -7,7 +7,6 @@
     owner: dirsrv
     src: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
 
-
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
     dest: "{{ dsm_base_varldif }}/migration-{{ item }}.ldif"
@@ -32,7 +31,7 @@
 
 - name: Extract schema into place
   ansible.builtin.unarchive:
-    src: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
+    src: "{{ dsm_tempdir }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
     dest: /
     remote_src: true
     include:
@@ -46,7 +45,6 @@
       - "{{ dsm_instance }}"
       - restart
   changed_when: false
-
 - name: Import data
   ansible.builtin.command:
     argv:

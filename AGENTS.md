@@ -14,10 +14,10 @@
 ## Project Structure & Module Organization
 - `site.yml`: Primary playbook orchestrating the DSM migration.
 - `inventory.yml`: Hosts grouped as `dsm_source` and `dsm_target`.
-- `roles/dsm/`: Role implementing migration logic
+- `roles/rhds_migration/`: Role implementing migration logic
   - `tasks/`: `main.yml`, `dsm_source.yml`, `dsm_target.yml`
   - `defaults/main.yml`: Default vars (override in inventory/group_vars)
-  - `templates/`: Jinja2 templates (e.g., `slapd.inf.j2`)
+  - `templates/`: (unused in current role)
 - `ansible.cfg`: Local config (e.g., `roles_path = roles`).
 - `.ansible/`: Local collections/modules workspace (optional).
 
@@ -38,7 +38,7 @@
 ## Coding Style & Naming Conventions
 - YAML: 2-space indent, no tabs; keys lower_snake_case.
 - Tasks: clear, imperative `name`; prefer FQCN modules (e.g., `ansible.builtin.command`).
-- Variables: define defaults in `roles/dsm/defaults/main.yml`; override via inventory/group_vars.
+- Variables: define defaults in `roles/rhds_migration/defaults/main.yml`; override via inventory/group_vars.
 - Templates: Jinja2 with spaced braces (`{{ var }}`) and minimal logic.
 - Files: keep role entrypoints as `main.yml`; split by concern (e.g., `dsm_source.yml`).
 
@@ -48,6 +48,7 @@
 - Naming: test-related files mirror role/feature names; prefer group_vars for overrides.
 
 ## Commit & Pull Request Guidelines
+- Never push directly to `main`: always create a PR and merge via review/CI.
 - Commits: use Conventional Commits (e.g., `feat: add target import step`, `fix: correct LDIF path`).
 - PRs include: purpose/impact, sample command used, `--check` output snippet or reasoning, risks/rollback, and linked issues.
 - Screenshots/logs: include relevant task output or diffs for review.

@@ -28,7 +28,7 @@
   hosts: dsm_source
   become: true
   roles:
-    - dsm
+    - rhds_migration
 
 - name: Import data into RHDS 12 targets
   hosts: dsm_target
@@ -81,4 +81,4 @@
         fail_msg: >-
           Missing artifacts on controller: {{ dsm_missing_artifacts }}
   roles:
-    - dsm
+    - rhds_migration
