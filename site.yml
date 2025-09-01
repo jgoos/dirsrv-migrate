@@ -34,6 +34,42 @@
   hosts: dsm_target
   become: true
   pre_tasks:
+    - name: Preflight | Define executable candidates (dsctl)
+      ansible.builtin.set_fact:
+        dsm_dsctl_candidates:
+          - /usr/sbin/dsctl
+          - /sbin/dsctl
+
+    - name: Preflight | Stat dsctl candidates
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ dsm_dsctl_candidates }}"
+      register: dsm_dsctl_stats
+
+    - name: Preflight | Assert dsctl is present on target
+      ansible.builtin.assert:
+        that:
+          - (dsm_dsctl_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
+        fail_msg: "dsctl not found. Ensure 389-DS is installed by the base role."
+
+    - name: Preflight | Define executable candidates (dsconf)
+      ansible.builtin.set_fact:
+        dsm_dsconf_candidates:
+          - /usr/sbin/dsconf
+          - /sbin/dsconf
+
+    - name: Preflight | Stat dsconf candidates
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ dsm_dsconf_candidates }}"
+      register: dsm_dsconf_stats
+
+    - name: Preflight | Assert dsconf is present on target
+      ansible.builtin.assert:
+        that:
+          - (dsm_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
+        fail_msg: "dsconf not found. Ensure 389-DS is installed by the base role."
+
     - name: Determine mapped source host candidates
       ansible.builtin.set_fact:
         dsm_source_candidates: "{{ dsm_host_map | dict2items | selectattr('value', 'equalto', inventory_hostname) | map(attribute='key') | list }}"
