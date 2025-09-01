@@ -1,6 +1,0 @@
----
-# tasks file for dsm (deprecated shim)
-
-- name: Deprecated shim | Call dirsrv_migrate role
-  ansible.builtin.include_role:
-    name: dirsrv_migrate
