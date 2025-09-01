@@ -104,5 +104,6 @@
           - (dsm_artifacts_stat.results | map(attribute='stat.exists') | list | min) | bool
         fail_msg: >-
           Missing artifacts on controller: {{ dsm_missing_artifacts }}
+      when: not ansible_check_mode
   roles:
     - dsm

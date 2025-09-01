@@ -39,7 +39,7 @@
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
   failed_when: false
-  when: dsm_manage_source_backends | bool
+  when: dsm_manage_source_backends | bool and not ansible_check_mode
 
 - name: Export via dsconf using --suffix (preferred)
   ansible.builtin.command:
@@ -83,6 +83,7 @@
     flat: true
     src: "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
+  when: not ansible_check_mode
   tags: [artifacts]
 
 - name: Fix permissions on LDIF dumps
@@ -93,6 +94,7 @@
   delegate_to: localhost
   become: false
   loop: "{{ dsm_backends.keys() | list }}"
+  when: not ansible_check_mode
   tags: [artifacts]
 
 - name: Create archive of instance config
@@ -103,7 +105,7 @@
       - "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
       - "{{ dsm_base_config }}"
   changed_when: false
-  when: dsm_collect_config | bool
+  when: dsm_collect_config | bool and not ansible_check_mode
   tags: [artifacts]
 
 - name: Fetch the config archive
@@ -111,7 +113,7 @@
     src: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
     dest: "{{ [dsm_artifact_root_effective, inventory_hostname, ''] | path_join }}"  # ensure trailing slash
     flat: true
-  when: dsm_collect_config | bool
+  when: dsm_collect_config | bool and not ansible_check_mode
   tags: [artifacts]
 
 - name: Fix permissions on config archive
@@ -121,7 +123,7 @@
   connection: local
   delegate_to: localhost
   become: false
-  when: dsm_collect_config | bool
+  when: dsm_collect_config | bool and not ansible_check_mode
   tags: [artifacts]
 
 - name: Start LDAP instance (offline export)
@@ -134,4 +136,4 @@
   ansible.builtin.file:
     path: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
     state: absent
-  when: dsm_collect_config | bool
+  when: dsm_collect_config | bool and not ansible_check_mode
