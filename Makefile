@@ -32,7 +32,7 @@ init_389ds:
 	  sleep 1; \
 	done
 
-seed_389ds:
+seed_389ds: deps_podman
 	@echo "Seeding example data on rhds11 via Ansible"
 	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
@@ -59,7 +59,7 @@ verify_389ds:
 deps_podman:
 	ansible-galaxy collection install containers.podman
 
-test_389ds: up_389ds init_389ds seed_389ds deps_podman migrate_pod verify_389ds
+test_389ds: up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds
 
 down_389ds:
 	podman compose -f compose/podman-compose.389ds.yml down
