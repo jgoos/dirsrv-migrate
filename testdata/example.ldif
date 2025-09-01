@@ -1,0 +1,44 @@
+dn: o=example
+objectClass: top
+objectClass: organization
+o: example
+
+dn: ou=people,o=example
+objectClass: top
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,o=example
+objectClass: top
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=alice,ou=people,o=example
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: Alice Example
+sn: Example
+givenName: Alice
+uid: alice
+mail: alice@example.com
+
+dn: uid=bob,ou=people,o=example
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: Bob Example
+sn: Example
+givenName: Bob
+uid: bob
+mail: bob@example.com
+
+dn: cn=devs,ou=groups,o=example
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: devs
+uniqueMember: uid=alice,ou=people,o=example
+uniqueMember: uid=bob,ou=people,o=example
+

@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  rhds11:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: rhds11
+    environment:
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+    ports:
+      - "1389:389"
+    volumes:
+      - type: bind
+        source: ../testdata/example.ldif
+        target: /root/example.ldif
+
+  rhds12:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: rhds12
+    environment:
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+    ports:
+      - "2389:389"
+
+volumes: {}
