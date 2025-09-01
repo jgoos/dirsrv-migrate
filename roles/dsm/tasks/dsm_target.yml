@@ -5,8 +5,15 @@
     group: dirsrv
     mode: '0640'
     owner: dirsrv
-    src: "{{ [dsm_artifact_root, dsm_source_host, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
+    src: "{{ [dsm_artifact_root_effective, dsm_source_host, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
+  when: dsm_collect_config | bool
 
+
+- name: Ensure LDIF directory exists on target
+  ansible.builtin.file:
+    path: "{{ dsm_base_varldif }}"
+    state: directory
+    mode: '0750'
 
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
@@ -14,9 +21,19 @@
     group: dirsrv
     mode: '0640'
     owner: dirsrv
-    setype: dirsrv_var_lib_t
-    src: "{{ [dsm_artifact_root, dsm_source_host, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+    setype: "{{ (ansible_selinux is defined and ansible_selinux.status != 'disabled') | ternary('dirsrv_var_lib_t', omit) }}"
+    src: "{{ [dsm_artifact_root_effective, dsm_source_host, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
+
+- name: Ensure target backends exist
+  ansible.builtin.shell: >-
+    dsconf {{ dsm_instance }} backend get-tree | grep -q '^{{ dsm_backends[item].suffix }}$' \
+    || dsconf {{ dsm_instance }} backend create --suffix '{{ dsm_backends[item].suffix }}' --be-name '{{ item }}' || true
+  args:
+    executable: /bin/sh
+  loop: "{{ dsm_backends.keys() | list }}"
+  changed_when: false
+  failed_when: false
 
 - name: Build list of target LDIF file paths
   ansible.builtin.set_fact:
@@ -38,21 +55,19 @@
     include:
       - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/*"
     # creates: "/etc/dirsrv/slapd-{{ dsm_instance }}/schema"
+  when: dsm_collect_config | bool
 
 - name: Restart instance
   ansible.builtin.systemd:
     name: "dirsrv@{{ dsm_instance }}"
     state: restarted
+  when: dsm_manage_service | bool
 
 - name: Import data
   ansible.builtin.command:
     argv:
       - /usr/sbin/dsconf
-      - -D
-      - "cn=Directory Manager"
-      - -w
-      - "{{ dsm_password }}"
-      - ldap://localhost:389
+      - "{{ dsm_instance }}"
       - backend
       - import
       - "{{ item }}"

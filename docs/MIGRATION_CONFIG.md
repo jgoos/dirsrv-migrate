@@ -3,10 +3,28 @@
 This document lists configuration areas to migrate when moving data from RHDS 11 to RHDS 12 using export/import. It reflects 389‑Directory Server/RHDS guidance to avoid copying `dse.ldif` across major versions and to apply configuration via supported tools.
 
 ## Approach Overview
-- Export data (LDIF) from each backend on RHDS 11.
+- Export data (LDIF) from each backend on RHDS 11 using vendor-supported tools.
 - Prepare RHDS 12 instance(s) fresh; ensure schema parity.
 - Import data into RHDS 12 per backend.
 - Recreate configuration via `dsconf` where required (do not copy `dse.ldif`).
+
+## Mapping 35 Pairs and Avoiding Overwrites
+
+- Define all 35 source→target pairs in `group_vars/all/dsm_mapping.yml` under `dsm_host_map`.
+- The playbook validates a strict 1:1 mapping and that every mapped host exists in the appropriate group (`dsm_source` or `dsm_target`).
+- Artifacts are staged on the controller under `{{ dsm_artifact_root_effective }}/<source-host>/` and targets pull from their mapped source.
+- To avoid overwriting artifacts across distinct migration runs, set an optional run label:
+  - `-e dsm_artifact_run=2024-09-01A` (or any descriptive label)
+  - This creates `{{ dsm_artifact_root }}/2024-09-01A/<source-host>/...`
+  - Leaving it empty keeps paths stable for idempotent reruns.
+
+Example invocation with vault and run label:
+
+```
+ansible-playbook -i inventory.yml site.yml \
+  --ask-vault-pass \
+  -e dsm_artifact_run=2024-09-01A
+```
 
 ## What To Migrate
 - Schema (server‑side):
@@ -107,6 +125,41 @@ Checklist for ACIs:
 - Security: TLS configured; certificates installed and trusted.
 - Policies: default/global password policy and storage schemes set.
 - Replication: agreements created and initialized (if applicable).
+
+## Export/Import Commands (Vendor Guidance)
+
+- Export (online, recommended):
+  - `dsconf <inst> -D "cn=Directory Manager" -w <pwd> ldap://<host>:389 backend export <be> <file.ldif>`
+- Export (offline):
+  - `dsctl <inst> db2ldif <be> <file.ldif>` and stop/start instance around export.
+- Import (online):
+  - `dsconf <inst> -D "cn=Directory Manager" -w <pwd> ldap://<host>:389 backend import <be> <file.ldif>`
+
+This role defaults to online export/import via `dsconf` (recommended by RHDS 12 docs). For constrained test containers, you can set `dsm_export_method: ldapsearch` to simulate export without relying on systemd.
+
+## Notes on Scale (35 servers)
+- Concurrency-safe on controller: per-source artifact directories prevent collisions between hosts.
+- Use `--limit` to scope subsets during staged rollouts (e.g., `--limit dsm_source[0:9]` then `dsm_target[0:9]`).
+- Set `dsm_artifact_run` for each batch if you want distinct artifact snapshots retained.
+
+## Local Testing with Podman
+
+The repo includes Podman Compose setups to spin up a source and target 389-DS and exercise the migration end-to-end.
+
+Local test — 389-DS prebuilt image (no SSH):
+- `compose/podman-compose.389ds.yml`: `rhds11` and `rhds12` using `quay.io/389ds/dirsrv`.
+- `test/inventory.compose.pod.yml`: uses the Podman connection plugin.
+- `test/compose_mapping.yml`: source→target map (`rhds11` → `rhds12`).
+- `test/compose_vars.yml`: test vars including `dsm_password`.
+
+Usage:
+Run (prebuilt 389-DS + Podman connection):
+  podman compose -f compose/podman-compose.389ds.yml up -d
+  make seed_389ds   # import example LDIF into source container
+  ansible-galaxy collection install containers.podman
+  make migrate_pod
+
+Re-run safely: artifacts land under `.ansible/artifacts/compose-dev/rhds11/…`. You can change `dsm_artifact_run` in `test/compose_vars.yml` to keep multiple snapshots.
 
 ## Commands Reference (illustrative)
 - Index management:

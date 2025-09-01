@@ -1,6 +1,6 @@
 - name: Ensure local artifact root directory exists
   ansible.builtin.file:
-    path: "{{ dsm_artifact_root }}"
+    path: "{{ dsm_artifact_root_effective }}"
     state: directory
     mode: "0750"
   connection: local
@@ -9,39 +9,74 @@
 
 - name: Ensure local artifact directory exists for this source
   ansible.builtin.file:
-    path: "{{ [dsm_artifact_root, inventory_hostname] | path_join }}"
+    path: "{{ [dsm_artifact_root_effective, inventory_hostname] | path_join }}"
     state: directory
     mode: "0750"
   connection: local
   delegate_to: localhost
   become: false
 
-- name: Stop LDAP instance
+- name: Stop LDAP instance (offline export)
   ansible.builtin.systemd:
     name: "dirsrv@{{ dsm_instance }}"
     state: stopped
+  when: dsm_manage_service | bool and dsm_export_offline | bool
 
-- name: Dump LDAP instance to LDIF
-  ansible.builtin.command:
-    argv:
-      - /sbin/dsctl
-      - "{{ dsm_instance }}"
-      - db2ldif
-      - "{{ item }}"
-      - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+- name: Ensure LDIF directory exists on source
+  ansible.builtin.file:
+    path: "{{ dsm_base_varldif }}"
+    state: directory
+    mode: "0750"
+
+- name: Ensure source backends exist
+  ansible.builtin.shell: >-
+    dsconf {{ dsm_instance }} backend get-tree | grep -q '^{{ dsm_backends[item].suffix }}$' \
+    || dsconf {{ dsm_instance }} backend create --suffix '{{ dsm_backends[item].suffix }}' --be-name '{{ item }}' || true
+  args:
+    executable: /bin/sh
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
+  failed_when: false
+
+- name: Export LDIF via dsconf backend export (online)
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/dsconf
+      - "{{ dsm_instance }}"
+      - backend
+      - export
+      - -l
+      - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+      - "{{ item }}"
+  loop: "{{ dsm_backends.keys() | list }}"
+  changed_when: false
+  when: dsm_export_method == 'dsconf'
+
+      
+
+- name: Export LDIF via ldapsearch (fallback/test)
+  ansible.builtin.shell: >-
+    LDAPTLS_REQCERT=never
+    ldapsearch -x -H ldap://localhost:389 \
+      -D 'cn=Directory Manager' -w '{{ dsm_password }}' \
+      -b '{{ dsm_backends[item].suffix }}' '(objectClass=*)' -LLL \
+      > '{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}'
+  args:
+    executable: /bin/sh
+  loop: "{{ dsm_backends.keys() | list }}"
+  changed_when: false
+  when: dsm_export_method == 'ldapsearch'
 
 - name: Fetch the LDIF dumps
   ansible.builtin.fetch:
-    dest: "{{ [dsm_artifact_root, inventory_hostname] | path_join }}"
+    dest: "{{ [dsm_artifact_root_effective, inventory_hostname, ''] | path_join }}"  # ensure trailing slash
     flat: true
     src: "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
 
 - name: Fix permissions on LDIF dumps
   ansible.builtin.file:
-    path: "{{ [dsm_artifact_root, inventory_hostname, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+    path: "{{ [dsm_artifact_root_effective, inventory_hostname, 'migration-' ~ item ~ '.ldif'] | path_join }}"
     mode: "0640"
   connection: local
   delegate_to: localhost
@@ -56,27 +91,32 @@
       - "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
       - "{{ dsm_base_config }}"
   changed_when: false
+  when: dsm_collect_config | bool
 
 - name: Fetch the config archive
   ansible.builtin.fetch:
     src: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
-    dest: "{{ [dsm_artifact_root, inventory_hostname] | path_join }}"
+    dest: "{{ [dsm_artifact_root_effective, inventory_hostname, ''] | path_join }}"  # ensure trailing slash
     flat: true
+  when: dsm_collect_config | bool
 
 - name: Fix permissions on config archive
   ansible.builtin.file:
-    path: "{{ [dsm_artifact_root, inventory_hostname, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
+    path: "{{ [dsm_artifact_root_effective, inventory_hostname, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
     mode: "0640"
   connection: local
   delegate_to: localhost
   become: false
+  when: dsm_collect_config | bool
 
-- name: Start LDAP instance
+- name: Start LDAP instance (offline export)
   ansible.builtin.systemd:
     name: "dirsrv@{{ dsm_instance }}"
     state: started
+  when: dsm_manage_service | bool and dsm_export_offline | bool
 
 - name: Remove archive of instance config on source
   ansible.builtin.file:
     path: "{{ [dsm_tempdir, 'dirsrv_slapd-' ~ dsm_instance ~ '.tar.bz2'] | path_join }}"
     state: absent
+  when: dsm_collect_config | bool

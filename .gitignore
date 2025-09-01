@@ -1,2 +1,27 @@
 .ansible/
 group_vars/all/vault.yml
+
+# Local dev/editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Python caches & venvs
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Ansible artifacts
+*.retry
+
+# Podman compose test data (container state)
+compose/data/
+compose/*.override.yml
+
+# Misc local env files
+.env
+.pytest_cache/
+.coverage

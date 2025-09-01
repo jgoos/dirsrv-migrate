@@ -21,6 +21,38 @@ dsm_backends:
 # Local artifact staging for migrations (on controller)
 dsm_artifact_root: "{{ playbook_dir }}/.ansible/artifacts"
 
+# Optional subdirectory label for artifacts to avoid overwrites across runs.
+# Example: set to a timestamp or change ticket, e.g. "2024-09-01-audit".
+# Leave empty for idempotent reruns that update the same files.
+dsm_artifact_run: ""
+
+# Effective artifact root that includes optional run label when provided.
+# When empty, resolves to dsm_artifact_root.
+dsm_artifact_root_effective: >-
+  {{ ([dsm_artifact_root, dsm_artifact_run] | path_join)
+     if (dsm_artifact_run | default('') | length > 0)
+     else dsm_artifact_root }}
+
+# Control service management (helpful in containers without systemd)
+dsm_manage_service: true
+
+# Path to dsctl (will be detected in site.yml pre_tasks; default works on many systems)
+dsm_dsctl_bin: /sbin/dsctl
+
+# Export method per vendor guidance (RHDS 12)
+# Options: 'dsconf' (recommended), 'ldapsearch' (test/container fallback)
+dsm_export_method: dsconf
+
+# If true, stop/start instance around export (offline). Default false for dsconf export.
+dsm_export_offline: false
+
+# dsconf URI to connect to the instance. Default to LDAP on localhost.
+# For containers, you can use LDAPI: ldapi://%2Fdata%2Frun%2Fslapd-<instance>.socket
+dsm_dsconf_uri: ldap://localhost:389
+
+# Collect and transfer instance config archive (for schema extraction)
+dsm_collect_config: true
+
 # Source → Target host mapping (override in group_vars)
 # Example:
 # dsm_host_map:

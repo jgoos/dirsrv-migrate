@@ -27,6 +27,24 @@
 - name: Dump LDIF and config from RHDS 11 sources
   hosts: dsm_source
   become: true
+  pre_tasks:
+    - name: Preflight | Define executable candidates (dsconf)
+      ansible.builtin.set_fact:
+        dsm_dsconf_candidates:
+          - /usr/sbin/dsconf
+          - /sbin/dsconf
+
+    - name: Preflight | Stat dsconf candidates
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: "{{ dsm_dsconf_candidates }}"
+      register: dsm_src_dsconf_stats
+
+    - name: Preflight | Assert dsconf is present on source
+      ansible.builtin.assert:
+        that:
+          - (dsm_src_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
+        fail_msg: "dsconf not found on source. Install 389-DS tools."
   roles:
     - dsm
 
@@ -85,26 +103,42 @@
           - dsm_source_host in groups['dsm_source']
         fail_msg: "No matching source host found for target {{ inventory_hostname }}"
 
-    - name: Build expected artifact list (controller)
+    - name: Init expected LDIFs list (controller)
       ansible.builtin.set_fact:
-        dsm_expected_ldifs: >-
-          {{ dsm_backends.keys() | list
-             | map('regex_replace', '^(.*)$', dsm_artifact_root ~ '/' ~ dsm_source_host ~ '/migration-\\1.ldif')
-             | list }}
-        dsm_expected_config: "{{ dsm_artifact_root }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+        dsm_expected_ldifs: []
+      connection: local
+      delegate_to: localhost
+      become: false
+
+    - name: Build expected LDIF artifact list (controller)
+      ansible.builtin.set_fact:
+        dsm_expected_ldifs: "{{ dsm_expected_ldifs + [ dsm_artifact_root_effective ~ '/' ~ dsm_source_host ~ '/migration-' ~ item ~ '.ldif' ] }}"
+      loop: "{{ dsm_backends.keys() | list }}"
+      connection: local
+      delegate_to: localhost
+      become: false
+
+    - name: Build expected config artifact path (controller)
+      ansible.builtin.set_fact:
+        dsm_expected_config: "{{ dsm_artifact_root_effective }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
+      when: dsm_collect_config | bool
+      connection: local
+      delegate_to: localhost
+      become: false
 
     - name: Stat expected artifacts on controller
       ansible.builtin.stat:
         path: "{{ item }}"
-      loop: "{{ [dsm_expected_config] + dsm_expected_ldifs }}"
+      loop: "{{ (dsm_collect_config | bool) | ternary([dsm_expected_config] + dsm_expected_ldifs, dsm_expected_ldifs) }}"
       register: dsm_artifacts_stat
       connection: local
       delegate_to: localhost
+      become: false
 
     - name: Build missing artifact list (controller)
       ansible.builtin.set_fact:
         dsm_missing_artifacts: >-
-          {{ ([dsm_expected_config] + dsm_expected_ldifs)
+          {{ (((dsm_collect_config | bool) | ternary([dsm_expected_config], [])) + dsm_expected_ldifs)
              | zip(dsm_artifacts_stat.results)
              | selectattr('1.stat.exists', 'equalto', false)
              | map('first')
