@@ -14,8 +14,8 @@
 ## Project Structure & Module Organization
 - `site.yml`: Primary playbook orchestrating the DSM migration.
 - `inventory.yml`: Hosts grouped as `dsm_source` and `dsm_target`.
-- `roles/dsm/`: Role implementing migration logic
-  - `tasks/`: `main.yml`, `dsm_source.yml`, `dsm_target.yml`
+- `roles/dirsrv_migrate/`: Role implementing migration logic
+  - `tasks/`: `main.yml`, `source.yml`, `target.yml`
   - `defaults/main.yml`: Default vars (override in inventory/group_vars)
   - `templates/`: Jinja2 templates (e.g., `slapd.inf.j2`)
 - `ansible.cfg`: Local config (e.g., `roles_path = roles`).
@@ -30,7 +30,7 @@
 
 ## Vault Usage
 - Store secrets in `group_vars/all/vault.yml` (encrypted with Ansible Vault).
-- Create/update: `ansible-vault edit group_vars/all/vault.yml` and set `dsm_password: <secret>`.
+- Create/update: `ansible-vault edit group_vars/all/vault.yml` and set `dirsrv_password: <secret>`.
 - Run with vault password prompt: `ansible-playbook -i inventory.yml site.yml --ask-vault-pass`.
 - Or with vault IDs: `ansible-playbook -i inventory.yml site.yml --vault-id dev@prompt`.
 - Note: `.gitignore` excludes `.ansible/` artifacts and `group_vars/all/vault.yml`.
@@ -38,9 +38,9 @@
 ## Coding Style & Naming Conventions
 - YAML: 2-space indent, no tabs; keys lower_snake_case.
 - Tasks: clear, imperative `name`; prefer FQCN modules (e.g., `ansible.builtin.command`).
-- Variables: define defaults in `roles/dsm/defaults/main.yml`; override via inventory/group_vars.
+- Variables: define defaults in `roles/dirsrv_migrate/defaults/main.yml`; override via inventory/group_vars.
 - Templates: Jinja2 with spaced braces (`{{ var }}`) and minimal logic.
-- Files: keep role entrypoints as `main.yml`; split by concern (e.g., `dsm_source.yml`).
+- Files: keep role entrypoints as `main.yml`; split by concern (e.g., `source.yml`).
 
 ## Testing Guidelines
 - Idempotence: run playbook twice; second run should show no changes.
@@ -53,6 +53,6 @@
 - Screenshots/logs: include relevant task output or diffs for review.
 
 ## Security & Configuration Tips
-- Do not commit secrets. Move `dsm_password` to Ansible Vault (e.g., `ansible-vault create group_vars/all/vault.yml`) and run with `--ask-vault-pass` or a vault ID.
+- Do not commit secrets. Move `dirsrv_password` to Ansible Vault (e.g., `ansible-vault create group_vars/all/vault.yml`) and run with `--ask-vault-pass` or a vault ID.
 - Prefer non-root SSH users with `become: true` (inventory shows `ansible_user: root` only as an example).
 - Keep inventory hostnames accurate; the play relies on single hosts in `dsm_source` and `dsm_target`.

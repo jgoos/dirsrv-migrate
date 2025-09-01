@@ -1,16 +1,17 @@
 ---
-# tasks file for dsm
+# dirsrv_migrate role tasks
 
 - name: Preflight | Detect dsconf path and capabilities
-  ansible.builtin.include_tasks:
-    file: preflight.yml
+  ansible.builtin.include_role:
+    name: dirsrv_common
+    tasks_from: preflight
 
 - name: Include source tasks
   ansible.builtin.include_tasks:
-    file: dsm_source.yml
+    file: source.yml
   when: inventory_hostname in groups['dsm_source']
 
 - name: Include target tasks
   ansible.builtin.include_tasks:
-    file: dsm_target.yml
+    file: target.yml
   when: inventory_hostname in groups['dsm_target']

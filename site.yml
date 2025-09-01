@@ -6,29 +6,29 @@
     - name: Ensure mapping is defined
       ansible.builtin.assert:
         that:
-          - dsm_host_map is mapping
-          - dsm_host_map | length > 0
-        fail_msg: "Define 'dsm_host_map' in group_vars with source→target pairs"
+          - dirsrv_host_map is mapping
+          - dirsrv_host_map | length > 0
+        fail_msg: "Define 'dirsrv_host_map' in group_vars with source→target pairs"
 
     - name: Ensure all sources are mapped and targets exist
       ansible.builtin.assert:
         that:
-          - (dsm_host_map.keys() | difference(groups['dsm_source'])) | length == 0
-          - (dsm_host_map.values() | difference(groups['dsm_target'])) | length == 0
+          - (dirsrv_host_map.keys() | difference(groups['dsm_source'])) | length == 0
+          - (dirsrv_host_map.values() | difference(groups['dsm_target'])) | length == 0
         fail_msg: "All map keys must be in dsm_source and values in dsm_target"
 
     - name: Ensure 1:1 mapping and expected counts
       ansible.builtin.assert:
         that:
-          - dsm_host_map | length == groups['dsm_source'] | length
-          - (dsm_host_map.values() | unique | length) == (dsm_host_map | length)
+          - dirsrv_host_map | length == groups['dsm_source'] | length
+          - (dirsrv_host_map.values() | unique | length) == (dirsrv_host_map | length)
         fail_msg: "Mapping must be 1:1 and cover all sources"
 
 - name: Dump LDIF and config from RHDS 11 sources
   hosts: dsm_source
   become: true
   roles:
-    - dsm
+    - dirsrv_migrate
 
 - name: Import data into RHDS 12 targets
   hosts: dsm_target
@@ -36,46 +36,46 @@
   pre_tasks:
     - name: Determine mapped source host candidates
       ansible.builtin.set_fact:
-        dsm_source_candidates: "{{ dsm_host_map | dict2items | selectattr('value', 'equalto', inventory_hostname) | map(attribute='key') | list }}"
+        dirsrv_source_candidates: "{{ dirsrv_host_map | dict2items | selectattr('value', 'equalto', inventory_hostname) | map(attribute='key') | list }}"
 
     - name: Select mapped source host for this target
       ansible.builtin.set_fact:
-        dsm_source_host: "{{ dsm_source_candidates | first }}"
+        dirsrv_source_host: "{{ dirsrv_source_candidates | first }}"
 
     - name: Assert mapped source host is found
       ansible.builtin.assert:
         that:
-          - dsm_source_host is defined
-          - dsm_source_host in groups['dsm_source']
+          - dirsrv_source_host is defined
+          - dirsrv_source_host in groups['dsm_source']
         fail_msg: "No matching source host found for target {{ inventory_hostname }}"
 
     - name: Init expected artifact vars (controller)
       ansible.builtin.set_fact:
-        dsm_expected_ldifs: []
-        dsm_expected_config: ""
+        dirsrv_expected_ldifs: []
+        dirsrv_expected_config: ""
       connection: local
       delegate_to: localhost
       become: false
 
     - name: Build expected LDIF artifact list (controller)
       ansible.builtin.set_fact:
-        dsm_expected_ldifs: "{{ dsm_expected_ldifs + [ dsm_artifact_root_effective ~ '/' ~ dsm_source_host ~ '/migration-' ~ item ~ '.ldif' ] }}"
-      loop: "{{ dsm_backends.keys() | list }}"
+        dirsrv_expected_ldifs: "{{ dirsrv_expected_ldifs + [ dirsrv_artifact_root_effective ~ '/' ~ dirsrv_source_host ~ '/migration-' ~ item ~ '.ldif' ] }}"
+      loop: "{{ dirsrv_backends.keys() | list }}"
       connection: local
       delegate_to: localhost
       become: false
 
     - name: Build expected config artifact path (controller)
       ansible.builtin.set_fact:
-        dsm_expected_config: "{{ dsm_artifact_root_effective }}/{{ dsm_source_host }}/dirsrv_slapd-{{ dsm_instance }}.tar.bz2"
-      when: dsm_collect_config | bool
+        dirsrv_expected_config: "{{ dirsrv_artifact_root_effective }}/{{ dirsrv_source_host }}/dirsrv_slapd-{{ dirsrv_instance }}.tar.bz2"
+      when: dirsrv_collect_config | bool
       connection: local
       delegate_to: localhost
       become: false
 
     - name: Build combined expected artifact list (controller)
       ansible.builtin.set_fact:
-        dsm_expected_artifacts: "{{ dsm_expected_ldifs + ((dsm_collect_config | bool) | ternary([dsm_expected_config], [])) }}"
+        dirsrv_expected_artifacts: "{{ dirsrv_expected_ldifs + ((dirsrv_collect_config | bool) | ternary([dirsrv_expected_config], [])) }}"
       connection: local
       delegate_to: localhost
       become: false
@@ -83,17 +83,17 @@
     - name: Stat expected artifacts on controller
       ansible.builtin.stat:
         path: "{{ item }}"
-      loop: "{{ dsm_expected_artifacts }}"
-      register: dsm_artifacts_stat
+      loop: "{{ dirsrv_expected_artifacts }}"
+      register: dirsrv_artifacts_stat
       connection: local
       delegate_to: localhost
       become: false
 
     - name: Build missing artifact list (controller)
       ansible.builtin.set_fact:
-        dsm_missing_artifacts: >-
-          {{ dsm_expected_artifacts
-             | zip(dsm_artifacts_stat.results)
+        dirsrv_missing_artifacts: >-
+          {{ dirsrv_expected_artifacts
+             | zip(dirsrv_artifacts_stat.results)
              | selectattr('1.stat.exists', 'equalto', false)
              | map('first')
              | list }}
@@ -101,9 +101,9 @@
     - name: Assert all expected artifacts exist on controller
       ansible.builtin.assert:
         that:
-          - (dsm_artifacts_stat.results | map(attribute='stat.exists') | list | min) | bool
+          - (dirsrv_artifacts_stat.results | map(attribute='stat.exists') | list | min) | bool
         fail_msg: >-
-          Missing artifacts on controller: {{ dsm_missing_artifacts }}
+          Missing artifacts on controller: {{ dirsrv_missing_artifacts }}
       when: not ansible_check_mode
   roles:
-    - dsm
+    - dirsrv_migrate

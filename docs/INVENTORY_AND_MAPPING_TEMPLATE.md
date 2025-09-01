@@ -1,8 +1,8 @@
 # Inventory and Mapping Templates (35 Pairs)
 
-Use these templates to scaffold your inventory and the `dsm_host_map` for 35 RHDS 11→12 pairs.
+Use these templates to scaffold your inventory and the `dirsrv_host_map` for 35 RHDS 11→12 pairs.
 
-Replace hostnames with your real FQDNs, then copy to `inventory.yml` and `group_vars/all/dsm_mapping.yml`.
+Replace hostnames with your real FQDNs, then copy to `inventory.yml` and `group_vars/all/dirsrv_mapping.yml`.
 
 ## inventory.yml (example)
 
@@ -86,11 +86,11 @@ all:
         rhds12-35.example.com: { ansible_user: root }
 ```
 
-## group_vars/all/dsm_mapping.yml (example)
+## group_vars/all/dirsrv_mapping.yml (example)
 
 ```yaml
 ---
-dsm_host_map:
+dirsrv_host_map:
   rhds11-01.example.com: rhds12-01.example.com
   rhds11-02.example.com: rhds12-02.example.com
   rhds11-03.example.com: rhds12-03.example.com
@@ -140,6 +140,5 @@ ansible-playbook -i inventory.yml site.yml --check --diff --limit localhost
 Use a run label to isolate artifacts per batch:
 
 ```bash
-ansible-playbook -i inventory.yml site.yml --ask-vault-pass -e dsm_artifact_run=2024-09-batch1
+ansible-playbook -i inventory.yml site.yml --ask-vault-pass -e dirsrv_artifact_run=2024-09-batch1
 ```
-
