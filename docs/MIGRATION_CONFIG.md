@@ -129,13 +129,14 @@ Checklist for ACIs:
 ## Export/Import Commands (Vendor Guidance)
 
 - Export (online, recommended):
-  - `dsconf <inst> backend export -l <file.ldif> <suffix>`
+  - `dsconf <inst> backend export --suffix <suffix> -l <file.ldif>`
 - Export (offline):
   - `dsctl <inst> db2ldif <suffix> <file.ldif>` and stop/start instance around export.
 - Import (online):
-  - `dsconf <inst> backend import <suffix> <file.ldif>`
+  - `dsconf <inst> backend import --suffix <suffix> <file.ldif>`
 
 Notes:
+- Prefer the explicit `--suffix` flag with `dsconf` to target the root suffix. Some versions accept the suffix positionally, but using `--suffix` is clearer and avoids ambiguity.
 - This role uses suffix‑based export/import so backend name changes do not affect the migration. It ensures a backend exists for each configured suffix on both source and target.
 - For constrained test containers, you can set `dsm_export_method: ldapsearch` to simulate export without relying on systemd.
 
