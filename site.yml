@@ -52,24 +52,6 @@
   hosts: dsm_target
   become: true
   pre_tasks:
-    - name: Preflight | Define executable candidates (dsctl)
-      ansible.builtin.set_fact:
-        dsm_dsctl_candidates:
-          - /usr/sbin/dsctl
-          - /sbin/dsctl
-
-    - name: Preflight | Stat dsctl candidates
-      ansible.builtin.stat:
-        path: "{{ item }}"
-      loop: "{{ dsm_dsctl_candidates }}"
-      register: dsm_dsctl_stats
-
-    - name: Preflight | Assert dsctl is present on target
-      ansible.builtin.assert:
-        that:
-          - (dsm_dsctl_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
-        fail_msg: "dsctl not found. Ensure 389-DS is installed by the base role."
-
     - name: Preflight | Define executable candidates (dsconf)
       ansible.builtin.set_fact:
         dsm_dsconf_candidates:
@@ -103,9 +85,10 @@
           - dsm_source_host in groups['dsm_source']
         fail_msg: "No matching source host found for target {{ inventory_hostname }}"
 
-    - name: Init expected LDIFs list (controller)
+    - name: Init expected artifact vars (controller)
       ansible.builtin.set_fact:
         dsm_expected_ldifs: []
+        dsm_expected_config: ""
       connection: local
       delegate_to: localhost
       become: false
@@ -126,10 +109,17 @@
       delegate_to: localhost
       become: false
 
+    - name: Build combined expected artifact list (controller)
+      ansible.builtin.set_fact:
+        dsm_expected_artifacts: "{{ dsm_expected_ldifs + ((dsm_collect_config | bool) | ternary([dsm_expected_config], [])) }}"
+      connection: local
+      delegate_to: localhost
+      become: false
+
     - name: Stat expected artifacts on controller
       ansible.builtin.stat:
         path: "{{ item }}"
-      loop: "{{ (dsm_collect_config | bool) | ternary([dsm_expected_config] + dsm_expected_ldifs, dsm_expected_ldifs) }}"
+      loop: "{{ dsm_expected_artifacts }}"
       register: dsm_artifacts_stat
       connection: local
       delegate_to: localhost
@@ -138,7 +128,7 @@
     - name: Build missing artifact list (controller)
       ansible.builtin.set_fact:
         dsm_missing_artifacts: >-
-          {{ (((dsm_collect_config | bool) | ternary([dsm_expected_config], [])) + dsm_expected_ldifs)
+          {{ dsm_expected_artifacts
              | zip(dsm_artifacts_stat.results)
              | selectattr('1.stat.exists', 'equalto', false)
              | map('first')
