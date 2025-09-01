@@ -129,13 +129,15 @@ Checklist for ACIs:
 ## Export/Import Commands (Vendor Guidance)
 
 - Export (online, recommended):
-  - `dsconf <inst> -D "cn=Directory Manager" -w <pwd> ldap://<host>:389 backend export <be> <file.ldif>`
+  - `dsconf <inst> backend export -l <file.ldif> <suffix>`
 - Export (offline):
-  - `dsctl <inst> db2ldif <be> <file.ldif>` and stop/start instance around export.
+  - `dsctl <inst> db2ldif <suffix> <file.ldif>` and stop/start instance around export.
 - Import (online):
-  - `dsconf <inst> -D "cn=Directory Manager" -w <pwd> ldap://<host>:389 backend import <be> <file.ldif>`
+  - `dsconf <inst> backend import <suffix> <file.ldif>`
 
-This role defaults to online export/import via `dsconf` (recommended by RHDS 12 docs). For constrained test containers, you can set `dsm_export_method: ldapsearch` to simulate export without relying on systemd.
+Notes:
+- This role uses suffix‑based export/import so backend name changes do not affect the migration. It ensures a backend exists for each configured suffix on both source and target.
+- For constrained test containers, you can set `dsm_export_method: ldapsearch` to simulate export without relying on systemd.
 
 ## Notes on Scale (35 servers)
 - Concurrency-safe on controller: per-source artifact directories prevent collisions between hosts.
