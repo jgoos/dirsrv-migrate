@@ -13,7 +13,7 @@ dsm_dse_ldif: "etc/dirsrv/slapd-{{ dsm_instance }}/dse.ldif"
 
 dsm_backends:
   userroot:
-    suffix: "o=asml"
+    suffix: "o=example"
 
 dsm_pkgs:
   - 389-ds-base
