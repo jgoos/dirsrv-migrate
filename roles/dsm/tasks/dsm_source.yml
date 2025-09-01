@@ -48,7 +48,8 @@
               + ['--suffix', dsm_backends[item].suffix, '-l', ([dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join)] }}"
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
-  when: dsm_export_method == 'dsconf' and (dsm_dsconf_supports_suffix | default(false))
+  when: dsm_export_method == 'dsconf' and (dsm_dsconf_supports_suffix | default(false)) and not ansible_check_mode
+  tags: [export]
 
 - name: Export via dsconf using positional suffix (fallback)
   ansible.builtin.command:
@@ -57,7 +58,8 @@
               + ['-l', ([dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join), dsm_backends[item].suffix] }}"
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
-  when: dsm_export_method == 'dsconf' and not (dsm_dsconf_supports_suffix | default(false))
+  when: dsm_export_method == 'dsconf' and not (dsm_dsconf_supports_suffix | default(false)) and not ansible_check_mode
+  tags: [export]
 
       
 
@@ -72,7 +74,8 @@
     executable: /bin/sh
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
-  when: dsm_export_method == 'ldapsearch'
+  when: dsm_export_method == 'ldapsearch' and not ansible_check_mode
+  tags: [export]
 
 - name: Fetch the LDIF dumps
   ansible.builtin.fetch:
@@ -80,6 +83,7 @@
     flat: true
     src: "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
+  tags: [artifacts]
 
 - name: Fix permissions on LDIF dumps
   ansible.builtin.file:
@@ -89,6 +93,7 @@
   delegate_to: localhost
   become: false
   loop: "{{ dsm_backends.keys() | list }}"
+  tags: [artifacts]
 
 - name: Create archive of instance config
   ansible.builtin.command:
@@ -99,6 +104,7 @@
       - "{{ dsm_base_config }}"
   changed_when: false
   when: dsm_collect_config | bool
+  tags: [artifacts]
 
 - name: Fetch the config archive
   ansible.builtin.fetch:
@@ -106,6 +112,7 @@
     dest: "{{ [dsm_artifact_root_effective, inventory_hostname, ''] | path_join }}"  # ensure trailing slash
     flat: true
   when: dsm_collect_config | bool
+  tags: [artifacts]
 
 - name: Fix permissions on config archive
   ansible.builtin.file:
@@ -115,6 +122,7 @@
   delegate_to: localhost
   become: false
   when: dsm_collect_config | bool
+  tags: [artifacts]
 
 - name: Start LDAP instance (offline export)
   ansible.builtin.systemd:

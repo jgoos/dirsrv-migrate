@@ -8,6 +8,7 @@ all:
           ansible_host: rhds11
           ansible_user: root
           ansible_remote_tmp: /tmp/.ansible
+          ansible_python_interpreter: auto_silent
           ansible_become: false
           # ds tools in container live in PATH, no SSH needed
     dsm_target:
@@ -17,4 +18,5 @@ all:
           ansible_host: rhds12
           ansible_user: root
           ansible_remote_tmp: /tmp/.ansible
+          ansible_python_interpreter: auto_silent
           ansible_become: false
