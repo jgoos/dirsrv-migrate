@@ -1,86 +1,91 @@
----
-# Default variables for dirsrv_migrate role.
-# Override via inventory/group_vars. Secrets (e.g., dsm_password) must come from Ansible Vault.
-# Note: Package installation is handled by a separate role; this role assumes
+# Default variables for dirsrv_migrate role
+#
+# Compatibility policy: "dirsrv_*" is the primary variable namespace. Backwards
+# compatibility is maintained by providing "dsm_*" aliases. See
+# docs/VARIABLES_AND_COMPATIBILITY.md.
+#
+# Secrets (e.g., dirsrv_password) must come from Ansible Vault.
+# Package installation is handled by a separate role; this role assumes
 # required packages (e.g., 389-ds-base) are already present on targets.
 
-dsm_instance: dir
-dsm_tempdir: /var/tmp
+# --- Canonical variables (dirsrv_*) ---
 
-dsm_base_var: "/var/lib/dirsrv/slapd-{{ dsm_instance }}"
-dsm_base_varldif: "/var/lib/dirsrv/slapd-{{ dsm_instance }}/ldif"
-dsm_base_config: "/etc/dirsrv/slapd-{{ dsm_instance }}"
-dsm_base_log: "/var/log/dirsrv/slapd-{{ dsm_instance }}"
-dsm_dse_ldif: "etc/dirsrv/slapd-{{ dsm_instance }}/dse.ldif"
+# Instance basics
+dirsrv_instance: dir
+dirsrv_tempdir: /var/tmp
 
-dsm_backends:
+# Standard paths derived from instance name
+dirsrv_base_var: "/var/lib/dirsrv/slapd-{{ dirsrv_instance }}"
+dirsrv_base_varldif: "/var/lib/dirsrv/slapd-{{ dirsrv_instance }}/ldif"
+dirsrv_base_config: "/etc/dirsrv/slapd-{{ dirsrv_instance }}"
+dirsrv_base_log: "/var/log/dirsrv/slapd-{{ dirsrv_instance }}"
+# Intentionally relative to support archive include paths
+dirsrv_dse_ldif: "etc/dirsrv/slapd-{{ dirsrv_instance }}/dse.ldif"
+
+# Backends to process (keyed by backend name)
+dirsrv_backends:
   userroot:
     suffix: "o=example"
 
-
-# Local artifact staging for migrations (on controller)
-dsm_artifact_root: "{{ playbook_dir }}/.ansible/artifacts"
-
-# Optional subdirectory label for artifacts to avoid overwrites across runs.
-# Example: set to a timestamp or change ticket, e.g. "2024-09-01-audit".
-# Leave empty for idempotent reruns that update the same files.
-dsm_artifact_run: ""
-
-# Effective artifact root that includes optional run label when provided.
-# When empty, resolves to dsm_artifact_root.
-dsm_artifact_root_effective: >-
-  {{ ([dsm_artifact_root, dsm_artifact_run] | path_join)
-     if (dsm_artifact_run | default('') | length > 0)
-     else dsm_artifact_root }}
+# Local artifact staging (controller)
+dirsrv_artifact_root: "{{ playbook_dir }}/.ansible/artifacts"
+# Optional subdirectory label to isolate runs (e.g., ticket or timestamp)
+dirsrv_artifact_run: ""
+# Effective artifact root including optional run label when provided
+dirsrv_artifact_root_effective: >-
+  {{ ([dirsrv_artifact_root, dirsrv_artifact_run] | path_join)
+     if (dirsrv_artifact_run | default('') | length > 0)
+     else dirsrv_artifact_root }}
 
 # Control service management (helpful in containers without systemd)
-dsm_manage_service: true
+dirsrv_manage_service: true
 
-# DEPRECATED: dsm_dsctl_bin is no longer used by this role. Kept for backwards
-# compatibility only; will be removed in a future revision.
-dsm_dsctl_bin: /sbin/dsctl  # deprecated, unused
-
-# LDAP connection URIs (override per environment)
+# LDAP connection URIs
 # TCP URI used by ldapsearch fallback or external tools
-dsm_ldap_tcp_uri: "ldap://localhost:389"
+dirsrv_ldap_tcp_uri: "ldap://localhost:389"
 # LDAPI socket path and URI (constructed by default for standard installs)
-dsm_ldapi_socket_path: "/var/run/dirsrv/slapd-{{ dsm_instance }}.socket"
-dsm_ldapi_uri: "ldapi://{{ dsm_ldapi_socket_path | urlencode }}"
+dirsrv_ldapi_socket_path: "/var/run/dirsrv/slapd-{{ dirsrv_instance }}.socket"
+dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | urlencode }}"
 
 # dsconf operation timeout (seconds). Applied when supported by dsconf.
-dsm_dsconf_timeout: 600
+dirsrv_dsconf_timeout: 600
 
 # Export method per vendor guidance (RHDS 12)
 # Options: 'dsconf' (recommended), 'ldapsearch' (test/container fallback)
-dsm_export_method: dsconf
+dirsrv_export_method: dsconf
 
 # If true, stop/start instance around export (offline). Default false for dsconf export.
-dsm_export_offline: false
+dirsrv_export_offline: false
 
-# dsconf URI to connect to the instance. Default to LDAP on localhost.
-# For containers, you can use LDAPI: ldapi://%2Fdata%2Frun%2Fslapd-<instance>.socket
-dsm_dsconf_uri: ldap://localhost:389
+# Deprecated: formerly used to point dsconf to a specific URI. dsconf now
+# operates on the instance name; keep for compatibility only. Will be removed
+# in a future major release. Prefer dirsrv_ldap_tcp_uri or dirsrv_ldapi_uri.
+dirsrv_dsconf_uri: ldap://localhost:389  # DEPRECATED, unused
 
 # Collect and transfer instance config archive (for schema extraction)
-dsm_collect_config: true
+dirsrv_collect_config: true
 
-# Manage backends on source (create if missing) — disabled by default.
-# Enable only for integration tests/containers.
-dsm_manage_source_backends: false
+# Manage backends on source (create if missing) — test-only convenience
+# Kept in defaults for visibility; override only in test environments
+dirsrv_manage_source_backends: false
 
 # Source → Target host mapping (override in group_vars)
 # Example:
-# dsm_host_map:
+# dirsrv_host_map:
 #   rhds11.example.com: rhds12.example.com
-dsm_host_map: {}
+dirsrv_host_map: {}
 
 # Cleanup patterns for configuration DSE LDIF (multi-line regex allowed)
 # Each item: { name: <id>, regexp: <pattern>, replace: <string default ''> }
-dsm_cleanup_patterns_dse:
+dirsrv_cleanup_patterns_dse:
   - name: remove_replication_agreements
     regexp: "(?ms)^dn: cn=replica,.*?(?=^dn: |\\Z)"
     replace: ""
 
 # Cleanup patterns for exported backend LDIFs (applied on target before import)
-dsm_cleanup_patterns_data: []
+dirsrv_cleanup_patterns_data: []
 
+
+# Historical compatibility for dsctl var name (not used by this role)
+# Kept for parity with older docs; safe to remove in a future major.
+dirsrv_dsctl_bin: "/sbin/dsctl"  # deprecated, unused

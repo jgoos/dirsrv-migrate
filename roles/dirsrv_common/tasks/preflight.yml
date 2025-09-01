@@ -1,7 +1,7 @@
 ---
 - name: Define dsconf candidate paths
   ansible.builtin.set_fact:
-    dsm_dsconf_candidates:
+    dirsrv_dsconf_candidates:
       - /usr/sbin/dsconf
       - /sbin/dsconf
       - dsconf
@@ -10,56 +10,65 @@
 - name: Stat dsconf candidates
   ansible.builtin.stat:
     path: "{{ item }}"
-  loop: "{{ dsm_dsconf_candidates }}"
-  register: dsm_dsconf_stats
+  loop: "{{ dirsrv_dsconf_candidates }}"
+  register: dirsrv_dsconf_stats
   tags: [preflight]
 
 - name: Assert dsconf is present
   ansible.builtin.assert:
     that:
-      - (dsm_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
+      - (dirsrv_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
     fail_msg: "dsconf not found. Ensure 389-DS tools are installed."
   tags: [preflight]
 
 - name: Select dsconf binary path
   ansible.builtin.set_fact:
-    dsm_dsconf_bin: "{{ (dsm_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list | first) | default('dsconf') }}"
+    dirsrv_dsconf_bin: "{{ (dirsrv_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list | first) | default('dsconf') }}"
   tags: [preflight]
 
 - name: Probe dsconf export help
   ansible.builtin.command:
-    argv: ["{{ dsm_dsconf_bin }}", "{{ dsm_instance }}", "backend", "export", "--help"]
-  register: dsm_src_dsconf_export_help
+    argv: ["{{ dirsrv_dsconf_bin }}", "{{ dirsrv_instance }}", "backend", "export", "--help"]
+  register: dirsrv_src_dsconf_export_help
   changed_when: false
   failed_when: false
   tags: [preflight]
 
 - name: Probe dsconf import help
   ansible.builtin.command:
-    argv: ["{{ dsm_dsconf_bin }}", "{{ dsm_instance }}", "backend", "import", "--help"]
-  register: dsm_tgt_dsconf_import_help
+    argv: ["{{ dirsrv_dsconf_bin }}", "{{ dirsrv_instance }}", "backend", "import", "--help"]
+  register: dirsrv_tgt_dsconf_import_help
   changed_when: false
   failed_when: false
   tags: [preflight]
 
 - name: Derive dsconf capability flags
   ansible.builtin.set_fact:
-    dsm_dsconf_supports_suffix: >-
-      {{ ((dsm_src_dsconf_export_help.stdout | default('')) + ' ' + (dsm_src_dsconf_export_help.stderr | default(''))
-          + ' ' + (dsm_tgt_dsconf_import_help.stdout | default('')) + ' ' + (dsm_tgt_dsconf_import_help.stderr | default(''))) is search('\\-\\-suffix') }}
-    dsm_dsconf_supports_timeout_export: >-
-      {{ ((dsm_src_dsconf_export_help.stdout | default('')) + ' ' + (dsm_src_dsconf_export_help.stderr | default(''))) is search('\\-\\-timeout') }}
-    dsm_dsconf_supports_timeout_import: >-
-      {{ ((dsm_tgt_dsconf_import_help.stdout | default('')) + ' ' + (dsm_tgt_dsconf_import_help.stderr | default(''))) is search('\\-\\-timeout') }}
+    dirsrv_dsconf_supports_suffix: >-
+      {{ ((dirsrv_src_dsconf_export_help.stdout | default('')) + ' ' + (dirsrv_src_dsconf_export_help.stderr | default(''))
+          + ' ' + (dirsrv_tgt_dsconf_import_help.stdout | default('')) + ' ' + (dirsrv_tgt_dsconf_import_help.stderr | default(''))) is search('\\-\\-suffix') }}
+    dirsrv_dsconf_supports_timeout_export: >-
+      {{ ((dirsrv_src_dsconf_export_help.stdout | default('')) + ' ' + (dirsrv_src_dsconf_export_help.stderr | default(''))) is search('\\-\\-timeout') }}
+    dirsrv_dsconf_supports_timeout_import: >-
+      {{ ((dirsrv_tgt_dsconf_import_help.stdout | default('')) + ' ' + (dirsrv_tgt_dsconf_import_help.stderr | default(''))) is search('\\-\\-timeout') }}
   tags: [preflight]
 
 - name: Build dsconf timeout argv (export)
   ansible.builtin.set_fact:
-    dsm_dsconf_export_timeout_args: "{{ ['--timeout', (dsm_dsconf_timeout | string)] if (dsm_dsconf_supports_timeout_export | default(false)) else [] }}"
+    dirsrv_dsconf_export_timeout_args: "{{ ['--timeout', (dirsrv_dsconf_timeout | string)] if (dirsrv_dsconf_supports_timeout_export | default(false)) else [] }}"
   tags: [preflight]
 
 - name: Build dsconf timeout argv (import)
   ansible.builtin.set_fact:
-    dsm_dsconf_import_timeout_args: "{{ ['--timeout', (dsm_dsconf_timeout | string)] if (dsm_dsconf_supports_timeout_import | default(false)) else [] }}"
+    dirsrv_dsconf_import_timeout_args: "{{ ['--timeout', (dirsrv_dsconf_timeout | string)] if (dirsrv_dsconf_supports_timeout_import | default(false)) else [] }}"
   tags: [preflight]
 
+- name: Set compatibility facts (dsm_*)
+  ansible.builtin.set_fact:
+    dsm_dsconf_bin: "{{ dirsrv_dsconf_bin }}"
+    dsm_dsconf_supports_suffix: "{{ dirsrv_dsconf_supports_suffix }}"
+    dsm_dsconf_supports_timeout_export: "{{ dirsrv_dsconf_supports_timeout_export }}"
+    dsm_dsconf_supports_timeout_import: "{{ dirsrv_dsconf_supports_timeout_import }}"
+    dsm_dsconf_export_timeout_args: "{{ dirsrv_dsconf_export_timeout_args }}"
+    dsm_dsconf_import_timeout_args: "{{ dirsrv_dsconf_import_timeout_args }}"
+  tags: [preflight]

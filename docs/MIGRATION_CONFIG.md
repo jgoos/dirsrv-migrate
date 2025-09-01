@@ -10,12 +10,12 @@ This document lists configuration areas to migrate when moving data from RHDS 11
 
 ## Mapping 35 Pairs and Avoiding Overwrites
 
-- Define all 35 source→target pairs in `group_vars/all/dsm_mapping.yml` under `dsm_host_map`.
+- Define all 35 source→target pairs in `group_vars/all/dirsrv_mapping.yml` under `dirsrv_host_map`.
 - The playbook validates a strict 1:1 mapping and that every mapped host exists in the appropriate group (`dsm_source` or `dsm_target`).
-- Artifacts are staged on the controller under `{{ dsm_artifact_root_effective }}/<source-host>/` and targets pull from their mapped source.
+- Artifacts are staged on the controller under `{{ dirsrv_artifact_root_effective }}/<source-host>/` and targets pull from their mapped source.
 - To avoid overwriting artifacts across distinct migration runs, set an optional run label:
-  - `-e dsm_artifact_run=2024-09-01A` (or any descriptive label)
-  - This creates `{{ dsm_artifact_root }}/2024-09-01A/<source-host>/...`
+  - `-e dirsrv_artifact_run=2024-09-01A` (or any descriptive label)
+  - This creates `{{ dirsrv_artifact_root }}/2024-09-01A/<source-host>/...`
   - Leaving it empty keeps paths stable for idempotent reruns.
 
 Example invocation with vault and run label:
@@ -23,7 +23,7 @@ Example invocation with vault and run label:
 ```
 ansible-playbook -i inventory.yml site.yml \
   --ask-vault-pass \
-  -e dsm_artifact_run=2024-09-01A
+  -e dirsrv_artifact_run=2024-09-01A
 ```
 
 ## What To Migrate
@@ -138,12 +138,12 @@ Checklist for ACIs:
 Notes:
 - Prefer the explicit `--suffix` flag with `dsconf` to target the root suffix. Some versions accept the suffix positionally, but using `--suffix` is clearer and avoids ambiguity.
 - This role uses suffix‑based export/import so backend name changes do not affect the migration. It ensures a backend exists for each configured suffix on both source and target.
-- For constrained test containers, you can set `dsm_export_method: ldapsearch` to simulate export without relying on systemd.
+- For constrained test containers, you can set `dirsrv_export_method: ldapsearch` to simulate export without relying on systemd.
 
 ## Notes on Scale (35 servers)
 - Concurrency-safe on controller: per-source artifact directories prevent collisions between hosts.
 - Use `--limit` to scope subsets during staged rollouts (e.g., `--limit dsm_source[0:9]` then `dsm_target[0:9]`).
-- Set `dsm_artifact_run` for each batch if you want distinct artifact snapshots retained.
+- Set `dirsrv_artifact_run` for each batch if you want distinct artifact snapshots retained.
 
 ## Local Testing with Podman
 
@@ -153,7 +153,7 @@ Local test — 389-DS prebuilt image (no SSH):
 - `compose/podman-compose.389ds.yml`: `rhds11` and `rhds12` using `quay.io/389ds/dirsrv`.
 - `test/inventory.compose.pod.yml`: uses the Podman connection plugin.
 - `test/compose_mapping.yml`: source→target map (`rhds11` → `rhds12`).
-- `test/compose_vars.yml`: test vars including `dsm_password`.
+- `test/compose_vars.yml`: test vars including `dirsrv_password`.
 
 Usage:
 Run (prebuilt 389-DS + Podman connection):
@@ -162,22 +162,22 @@ Run (prebuilt 389-DS + Podman connection):
   ansible-galaxy collection install containers.podman
   make migrate_pod
 
-Re-run safely: artifacts land under `.ansible/artifacts/compose-dev/rhds11/…`. You can change `dsm_artifact_run` in `test/compose_vars.yml` to keep multiple snapshots.
+Re-run safely: artifacts land under `.ansible/artifacts/compose-dev/rhds11/…`. You can change `dirsrv_artifact_run` in `test/compose_vars.yml` to keep multiple snapshots.
 
 ## Runtime Variables (Tuning)
 
 These variables can be overridden in `group_vars`, inventory, or at runtime with `-e`:
 
-- `dsm_ldap_tcp_uri`: TCP LDAP URI used by ldapsearch fallback or external tools. Default: `ldap://localhost:389`.
-- `dsm_ldapi_socket_path`: Local LDAPI socket path for the instance. Default: `/var/run/dirsrv/slapd-<instance>.socket`.
-- `dsm_ldapi_uri`: Computed LDAPI URI based on `dsm_ldapi_socket_path`. Default: `ldapi://%2Fvar%2Frun%2Fdirsrv%2Fslapd-<instance>.socket`.
-- `dsm_dsconf_timeout`: Seconds for `dsconf` export/import operations when supported (applies `--timeout <seconds>`). Default: `600`.
-- `dsm_collect_config`: Whether to collect and transfer server config archive (used for schema extraction). Default: `true`. In container tests: `false`.
-- `dsm_manage_source_backends`: Test-only; allow creating the source backend/suffix if missing. Default: `false` (prod safe). In container tests: `true`.
+- `dirsrv_ldap_tcp_uri`: TCP LDAP URI used by ldapsearch fallback or external tools. Default: `ldap://localhost:389`.
+- `dirsrv_ldapi_socket_path`: Local LDAPI socket path for the instance. Default: `/var/run/dirsrv/slapd-<instance>.socket`.
+- `dirsrv_ldapi_uri`: Computed LDAPI URI based on `dirsrv_ldapi_socket_path`. Default: `ldapi://%2Fvar%2Frun%2Fdirsrv%2Fslapd-<instance>.socket`.
+- `dirsrv_dsconf_timeout`: Seconds for `dsconf` export/import operations when supported (applies `--timeout <seconds>`). Default: `600`.
+- `dirsrv_collect_config`: Whether to collect and transfer server config archive (used for schema extraction). Default: `true`. In container tests: `false`.
+- `dirsrv_manage_source_backends`: Test-only; allow creating the source backend/suffix if missing. Default: `false` (prod safe). In container tests: `true`.
 
 Notes:
 - The role auto-detects `dsconf` path and capabilities (e.g., `--suffix`, `--timeout`) per host; when supported, timeout is applied automatically.
-- In production, `dsm_manage_source_backends` should remain `false` so the source is not mutated by the role.
+- In production, `dirsrv_manage_source_backends` should remain `false` so the source is not mutated by the role.
 
 ## Commands Reference (illustrative)
 - Index management:
