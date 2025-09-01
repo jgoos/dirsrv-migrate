@@ -17,6 +17,7 @@
     owner: dirsrv
     group: dirsrv
   tags: [artifacts]
+  when: not ansible_check_mode
 
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
@@ -28,6 +29,7 @@
     src: "{{ [dsm_artifact_root_effective, dsm_source_host, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
   tags: [artifacts]
+  when: not ansible_check_mode
 
 - name: Ensure target backends exist
   ansible.builtin.shell: >-
@@ -39,6 +41,7 @@
   changed_when: false
   failed_when: false
   tags: [import]
+  when: not ansible_check_mode
 
 - name: Build list of target LDIF file paths
   ansible.builtin.set_fact:
@@ -52,6 +55,7 @@
     replace: "{{ item.1.replace | default('') }}"
   loop: "{{ (dsm_ldif_files | default([])) | product(dsm_cleanup_patterns_data | default([])) | list }}"
   tags: [import]
+  when: not ansible_check_mode
 
 - name: Extract schema into place
   ansible.builtin.unarchive:
@@ -61,14 +65,14 @@
     include:
       - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/*"
     # creates: "/etc/dirsrv/slapd-{{ dsm_instance }}/schema"
-  when: dsm_collect_config | bool
+  when: dsm_collect_config | bool and not ansible_check_mode
   tags: [artifacts]
 
 - name: Restart instance
   ansible.builtin.systemd:
     name: "dirsrv@{{ dsm_instance }}"
     state: restarted
-  when: dsm_manage_service | bool
+  when: dsm_manage_service | bool and not ansible_check_mode
   tags: [import]
 
 - name: Import via dsconf using --suffix (preferred)
