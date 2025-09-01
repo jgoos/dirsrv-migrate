@@ -62,13 +62,3 @@
   ansible.builtin.set_fact:
     dirsrv_dsconf_import_timeout_args: "{{ ['--timeout', (dirsrv_dsconf_timeout | string)] if (dirsrv_dsconf_supports_timeout_import | default(false)) else [] }}"
   tags: [preflight]
-
-- name: Set compatibility facts (dsm_*)
-  ansible.builtin.set_fact:
-    dsm_dsconf_bin: "{{ dirsrv_dsconf_bin }}"
-    dsm_dsconf_supports_suffix: "{{ dirsrv_dsconf_supports_suffix }}"
-    dsm_dsconf_supports_timeout_export: "{{ dirsrv_dsconf_supports_timeout_export }}"
-    dsm_dsconf_supports_timeout_import: "{{ dirsrv_dsconf_supports_timeout_import }}"
-    dsm_dsconf_export_timeout_args: "{{ dirsrv_dsconf_export_timeout_args }}"
-    dsm_dsconf_import_timeout_args: "{{ dirsrv_dsconf_import_timeout_args }}"
-  tags: [preflight]
