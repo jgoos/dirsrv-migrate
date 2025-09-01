@@ -1,6 +1,10 @@
 ---
 # tasks file for dsm
 
+- name: Preflight | Detect dsconf path and capabilities
+  ansible.builtin.include_tasks:
+    file: preflight.yml
+
 - name: Include source tasks
   ansible.builtin.include_tasks:
     file: dsm_source.yml
