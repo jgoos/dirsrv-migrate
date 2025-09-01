@@ -5,22 +5,26 @@
       - /usr/sbin/dsconf
       - /sbin/dsconf
       - dsconf
+  tags: [preflight]
 
 - name: Stat dsconf candidates
   ansible.builtin.stat:
     path: "{{ item }}"
   loop: "{{ dsm_dsconf_candidates }}"
   register: dsm_dsconf_stats
+  tags: [preflight]
 
 - name: Assert dsconf is present
   ansible.builtin.assert:
     that:
       - (dsm_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
     fail_msg: "dsconf not found. Ensure 389-DS tools are installed."
+  tags: [preflight]
 
 - name: Select dsconf binary path
   ansible.builtin.set_fact:
     dsm_dsconf_bin: "{{ (dsm_dsconf_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list | first) | default('dsconf') }}"
+  tags: [preflight]
 
 - name: Probe dsconf export help
   ansible.builtin.command:
@@ -28,6 +32,7 @@
   register: dsm_src_dsconf_export_help
   changed_when: false
   failed_when: false
+  tags: [preflight]
 
 - name: Probe dsconf import help
   ansible.builtin.command:
@@ -35,6 +40,7 @@
   register: dsm_tgt_dsconf_import_help
   changed_when: false
   failed_when: false
+  tags: [preflight]
 
 - name: Derive dsconf capability flags
   ansible.builtin.set_fact:
@@ -49,8 +55,9 @@
 - name: Build dsconf timeout argv (export)
   ansible.builtin.set_fact:
     dsm_dsconf_export_timeout_args: "{{ ['--timeout', (dsm_dsconf_timeout | string)] if (dsm_dsconf_supports_timeout_export | default(false)) else [] }}"
+  tags: [preflight]
 
 - name: Build dsconf timeout argv (import)
   ansible.builtin.set_fact:
     dsm_dsconf_import_timeout_args: "{{ ['--timeout', (dsm_dsconf_timeout | string)] if (dsm_dsconf_supports_timeout_import | default(false)) else [] }}"
-
+  tags: [preflight]

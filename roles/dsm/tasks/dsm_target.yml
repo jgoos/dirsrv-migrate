@@ -16,6 +16,7 @@
     mode: '0750'
     owner: dirsrv
     group: dirsrv
+  tags: [artifacts]
 
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
@@ -26,6 +27,7 @@
     setype: "{{ (ansible_selinux is defined and ansible_selinux.status != 'disabled') | ternary('dirsrv_var_lib_t', omit) }}"
     src: "{{ [dsm_artifact_root_effective, dsm_source_host, 'migration-' ~ item ~ '.ldif'] | path_join }}"
   loop: "{{ dsm_backends.keys() | list }}"
+  tags: [artifacts]
 
 - name: Ensure target backends exist
   ansible.builtin.shell: >-
@@ -36,6 +38,7 @@
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
   failed_when: false
+  tags: [import]
 
 - name: Build list of target LDIF file paths
   ansible.builtin.set_fact:
@@ -48,6 +51,7 @@
     regexp: "{{ item.1.regexp }}"
     replace: "{{ item.1.replace | default('') }}"
   loop: "{{ (dsm_ldif_files | default([])) | product(dsm_cleanup_patterns_data | default([])) | list }}"
+  tags: [import]
 
 - name: Extract schema into place
   ansible.builtin.unarchive:
@@ -58,12 +62,14 @@
       - "etc/dirsrv/slapd-{{ dsm_instance }}/schema/*"
     # creates: "/etc/dirsrv/slapd-{{ dsm_instance }}/schema"
   when: dsm_collect_config | bool
+  tags: [artifacts]
 
 - name: Restart instance
   ansible.builtin.systemd:
     name: "dirsrv@{{ dsm_instance }}"
     state: restarted
   when: dsm_manage_service | bool
+  tags: [import]
 
 - name: Import via dsconf using --suffix (preferred)
   ansible.builtin.command:
@@ -72,7 +78,8 @@
               + ['--suffix', dsm_backends[item].suffix, ([dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join)] }}"
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
-  when: dsm_dsconf_supports_suffix | default(false)
+  when: dsm_dsconf_supports_suffix | default(false) and not ansible_check_mode
+  tags: [import]
 
 - name: Import via dsconf using positional suffix (fallback)
   ansible.builtin.command:
@@ -81,4 +88,5 @@
               + [ dsm_backends[item].suffix, ([dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join) ] }}"
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
-  when: not (dsm_dsconf_supports_suffix | default(false))
+  when: not (dsm_dsconf_supports_suffix | default(false)) and not ansible_check_mode
+  tags: [import]

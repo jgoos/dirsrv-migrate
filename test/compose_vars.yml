@@ -10,7 +10,7 @@ dsm_artifact_run: compose-dev
 
 # Backend name used by 389-DS default instance
 dsm_backends:
-  userRoot:
+  userroot:
     suffix: "o=example"
 
 # Use vendor-recommended online export/import via dsconf
