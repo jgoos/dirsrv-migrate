@@ -53,6 +53,10 @@ dsm_dsconf_uri: ldap://localhost:389
 # Collect and transfer instance config archive (for schema extraction)
 dsm_collect_config: true
 
+# Manage backends on source (create if missing) — disabled by default.
+# Enable only for integration tests/containers.
+dsm_manage_source_backends: false
+
 # Source → Target host mapping (override in group_vars)
 # Example:
 # dsm_host_map:

@@ -21,3 +21,4 @@ dsm_dsconf_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
 
 # Skip config archive/schema extraction in containers
 dsm_collect_config: false
+dsm_manage_source_backends: true

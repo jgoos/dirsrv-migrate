@@ -22,18 +22,22 @@ up_389ds:
 	podman compose -f compose/podman-compose.389ds.yml up -d
 
 init_389ds:
-	@echo "Waiting for LDAP on rhds11 and rhds12..."
-	@for i in $$(seq 1 30); do \
-	  podman exec rhds11 ldapsearch -x -H ldap://localhost:389 -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
+	@echo "Waiting for LDAP (ldapi) on rhds11 and rhds12..."
+	@for i in $$(seq 1 60); do \
+	  podman exec rhds11 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
 	  sleep 1; \
 	done; \
-	for i in $$(seq 1 30); do \
-	  podman exec rhds12 ldapsearch -x -H ldap://localhost:389 -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
+	for i in $$(seq 1 60); do \
+	  podman exec rhds12 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
 	  sleep 1; \
 	done
 
 seed_389ds:
-	podman exec rhds11 /bin/sh -lc 'test -f /root/example.ldif && ldapadd -x -H ldap://localhost:389 -D "cn=Directory Manager" -w "password" -f /root/example.ldif || true'
+	@echo "Seeding example data on rhds11 via Ansible"
+	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	ansible-playbook -i test/inventory.compose.pod.yml \
+	  -e @test/compose_vars.yml \
+	  test/seed.yml
 
 migrate_pod:
 	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
@@ -46,11 +50,16 @@ verify_389ds:
 	@echo "Verifying entries on target (rhds12)"
 	podman exec rhds12 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice | grep -q "uid=alice" && echo "OK: alice present" || (echo "Missing alice" && exit 1)
 	podman exec rhds12 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=bob | grep -q "uid=bob" && echo "OK: bob present" || (echo "Missing bob" && exit 1)
+	# Verify nested group and service account
+	podman exec rhds12 ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b 'cn=staff,ou=groups,o=example' -s base uniqueMember | grep -iq "uniqueMember: cn=devs,ou=groups,o=example" && echo "OK: staff includes devs" || (echo "Missing nested group" && exit 1)
+	podman exec rhds12 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=app-x | grep -q "uid=app-x" && echo "OK: app-x present" || (echo "Missing app-x" && exit 1)
+	# Verify an ACI string imported into data
+	podman exec rhds12 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example '(aci=*)' aci | grep -q "Devs can write mail" && echo "OK: ACI present" || (echo "Missing data ACI" && exit 1)
 
 deps_podman:
 	ansible-galaxy collection install containers.podman
 
-test_389ds: up_389ds init_389ds deps_podman migrate_pod verify_389ds
+test_389ds: up_389ds init_389ds seed_389ds deps_podman migrate_pod verify_389ds
 
 down_389ds:
 	podman compose -f compose/podman-compose.389ds.yml down

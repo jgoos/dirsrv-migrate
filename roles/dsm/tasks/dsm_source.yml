@@ -39,36 +39,36 @@
   loop: "{{ dsm_backends.keys() | list }}"
   changed_when: false
   failed_when: false
+  when: dsm_manage_source_backends | bool
 
-- name: Export LDIF via dsconf backend export (online)
-  block:
-    - name: Export via dsconf using --suffix (preferred)
-      ansible.builtin.command:
-        argv:
-          - /usr/sbin/dsconf
-          - "{{ dsm_instance }}"
-          - backend
-          - export
-          - --suffix
-          - "{{ dsm_backends[item].suffix }}"
-          - -l
-          - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
-      loop: "{{ dsm_backends.keys() | list }}"
-      changed_when: false
-  rescue:
-    - name: Export via dsconf using positional suffix (fallback)
-      ansible.builtin.command:
-        argv:
-          - /usr/sbin/dsconf
-          - "{{ dsm_instance }}"
-          - backend
-          - export
-          - -l
-          - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
-          - "{{ dsm_backends[item].suffix }}"
-      loop: "{{ dsm_backends.keys() | list }}"
-      changed_when: false
-  when: dsm_export_method == 'dsconf'
+- name: Export via dsconf using --suffix (preferred)
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/dsconf
+      - "{{ dsm_instance }}"
+      - backend
+      - export
+      - --suffix
+      - "{{ dsm_backends[item].suffix }}"
+      - -l
+      - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+  loop: "{{ dsm_backends.keys() | list }}"
+  changed_when: false
+  when: dsm_export_method == 'dsconf' and (dsm_dsconf_supports_suffix | default(false))
+
+- name: Export via dsconf using positional suffix (fallback)
+  ansible.builtin.command:
+    argv:
+      - /usr/sbin/dsconf
+      - "{{ dsm_instance }}"
+      - backend
+      - export
+      - -l
+      - "{{ [dsm_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+      - "{{ dsm_backends[item].suffix }}"
+  loop: "{{ dsm_backends.keys() | list }}"
+  changed_when: false
+  when: dsm_export_method == 'dsconf' and not (dsm_dsconf_supports_suffix | default(false))
 
       
 
