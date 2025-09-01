@@ -2,6 +2,18 @@ dn: o=example
 objectClass: top
 objectClass: organization
 o: example
+aci: (target="ldap:///ou=people,o=example")(targetattr="cn || sn || givenName || mail || uid")
+  (version 3.0; acl "Allow anonymous read on basic attrs";
+   allow (read, search, compare)
+   (userdn = "ldap:///anyone"); )
+aci: (targetattr = "telephoneNumber || mobile")
+  (version 3.0; acl "Self can edit phone numbers";
+   allow (write)
+   (userdn = "ldap:///self"); )
+aci: (target="ldap:///ou=people,o=example")(targetattr = "mail")
+  (version 3.0; acl "Devs can write mail";
+   allow (write)
+   (groupdn = "ldap:///cn=devs,ou=groups,o=example"); )
 
 dn: ou=people,o=example
 objectClass: top
@@ -13,6 +25,11 @@ objectClass: top
 objectClass: organizationalUnit
 ou: groups
 
+dn: ou=applications,o=example
+objectClass: top
+objectClass: organizationalUnit
+ou: applications
+
 dn: uid=alice,ou=people,o=example
 objectClass: top
 objectClass: person
@@ -23,6 +40,8 @@ sn: Example
 givenName: Alice
 uid: alice
 mail: alice@example.com
+telephoneNumber: +1 555 0100
+seeAlso: uid=bob,ou=people,o=example
 
 dn: uid=bob,ou=people,o=example
 objectClass: top
@@ -34,6 +53,31 @@ sn: Example
 givenName: Bob
 uid: bob
 mail: bob@example.com
+telephoneNumber: +1 555 0101
+
+dn: uid=carol,ou=people,o=example
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: Carol Example
+sn: Example
+givenName: Carol
+uid: carol
+mail: carol@example.com
+telephoneNumber: +1 555 0102
+
+dn: uid=dave,ou=people,o=example
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: Dave Example
+sn: Example
+givenName: Dave
+uid: dave
+mail: dave@example.com
+mobile: +1 555 0103
 
 dn: cn=devs,ou=groups,o=example
 objectClass: top
@@ -42,3 +86,27 @@ cn: devs
 uniqueMember: uid=alice,ou=people,o=example
 uniqueMember: uid=bob,ou=people,o=example
 
+dn: cn=staff,ou=groups,o=example
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: staff
+uniqueMember: cn=devs,ou=groups,o=example
+uniqueMember: uid=carol,ou=people,o=example
+
+dn: cn=ops,ou=groups,o=example
+objectClass: top
+objectClass: groupOfUniqueNames
+cn: ops
+uniqueMember: uid=dave,ou=people,o=example
+
+dn: uid=app-x,ou=applications,o=example
+objectClass: top
+objectClass: person
+objectClass: organizationalPerson
+objectClass: inetOrgPerson
+cn: App X
+sn: App
+givenName: App
+uid: app-x
+mail: app-x@example.com
+userPassword: password

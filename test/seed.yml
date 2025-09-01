@@ -1,0 +1,63 @@
+---
+- name: Seed test data in containers (Podman only)
+  hosts: dsm_source
+  gather_facts: false
+  vars:
+    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    example_ldif: "/root/example.ldif"
+    suffix: "o=example"
+    instance: "{{ dsm_instance | default('localhost') }}"
+
+  pre_tasks:
+    - name: Guard | Ensure Podman connection is used
+      ansible.builtin.assert:
+        that:
+          - ansible_connection is defined
+          - ansible_connection == 'containers.podman.podman'
+        fail_msg: "This seed play is for Podman test containers only."
+
+  tasks:
+    - name: Wait for ldapi to be ready
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -Y
+          - EXTERNAL
+          - -H
+          - "{{ ldapi_uri }}"
+          - -s
+          - base
+          - -b
+          - ''
+          - '(objectClass=*)'
+      register: ldapi_ready
+      changed_when: false
+      retries: 120
+      delay: 1
+      until: ldapi_ready.rc == 0
+
+    - name: Ensure suffix mapping tree exists
+      ansible.builtin.shell: >-
+        dsconf {{ instance }} backend get-tree | grep -q '^{{ suffix }}$' \
+        || dsconf {{ instance }} backend create --suffix '{{ suffix }}' --be-name userRoot
+      args:
+        executable: /bin/sh
+      changed_when: false
+      failed_when: false
+
+    - name: Seed example LDIF (idempotent, retries)
+      ansible.builtin.shell: |
+        if [ -f "{{ example_ldif }}" ]; then
+          ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}" -f "{{ example_ldif }}"
+        else
+          exit 0
+        fi
+      register: seed
+      changed_when: false
+      failed_when: >-
+        seed.rc != 0 and not (((seed.stderr | default('')) ~ (seed.stdout | default(''))) is search('Already exists'))
+      retries: 20
+      delay: 1
+      until: >-
+        seed.rc == 0 or (((seed.stderr | default('')) ~ (seed.stdout | default(''))) is search('Already exists'))
+
