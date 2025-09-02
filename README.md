@@ -16,6 +16,11 @@ Automates export/import migrations from Red Hat Directory Server (389‑DS) RHDS
   - `tasks/source.yml`: Exports LDIFs and collects optional config archive.
   - `tasks/target.yml`: Copies artifacts, ensures backends, cleans LDIF, and imports.
   - `defaults/main.yml`: Default variables (override in inventory or group_vars).
+- `roles/dirsrv_repl/`: Replication role (suppliers/consumers/hubs)
+  - `tasks/enable.yml`: Enables replication role per suffix (supplier/consumer) and ensures suffix exists.
+  - `tasks/agreements.yml`: Creates agreements, optional schedule/fractional replication, polls init.
+  - `tasks/tuning.yml`: Changelog purge/encryption and release-timeout tuning.
+  - `README.md`: Usage, auth modes, examples (single + mesh topologies).
 - `roles/dirsrv_common/tasks/preflight.yml`: Detects `dsconf` path/capabilities.
 - `docs/`: Reference guides and templates (variables, inventory/mapping, migration notes).
 - `compose/`, `test/`, `scripts/`, `testdata/`: Local Podman test setup and example data.
@@ -76,7 +81,9 @@ This repo includes a minimal local lab using prebuilt 389‑DS images.
 - Bring up containers: `podman-compose -f compose/podman-compose.389ds.yml up -d` (or `podman compose ...` if preferred)
 - Seed example data on source: `make seed_389ds`
 - Migrate via Podman connection: `make migrate_pod` (or `make test_389ds` for full flow)
-- Verify: `make verify_389ds`
+- Verify migration: `make verify_389ds`
+- Replication role (single supplier→consumer): `make test_repl`
+- Replication role mesh (2 suppliers + 2 consumers): `make test_repl_mesh`
 
 Files
 - `test/inventory.compose.pod.yml`: Podman connection inventory (ds-s1, ds-c1).
@@ -107,6 +114,7 @@ See full defaults in `roles/dirsrv_migrate/defaults/main.yml` and naming notes i
 - Mapping assertion fails: Keep a strict 1:1 map; all keys in `dsm_source` and all values in `dsm_target`.
 - Missing artifacts on target: Re‑run source export, confirm files under `.ansible/artifacts/<run>/<source>/`.
 - Container tests: set `dirsrv_manage_service: false` and use the Podman inventory.
+- Podman on macOS: if you see `proxy already running` when bringing up the lab, re‑run the Makefile targets; we avoid host port mappings and force‑remove stale containers to stabilize compose up/down.
 
 
 ## Contributing

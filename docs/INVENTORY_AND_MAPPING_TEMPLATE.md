@@ -2,6 +2,8 @@
 
 Use these templates to scaffold your inventory and the `dirsrv_host_map` for 35 RHDS 11→12 pairs.
 
+Note: For the local test lab, hostnames `ds-s1`/`ds-c1`/`ds-s2`/`ds-c2` are used. This document targets production‑style FQDNs.
+
 Replace hostnames with your real FQDNs, then copy to `inventory.yml` and `group_vars/all/dirsrv_mapping.yml`.
 
 ## inventory.yml (example)

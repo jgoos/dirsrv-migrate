@@ -17,6 +17,10 @@ Quick Start
 - Define `dirsrv_repl_nodes`, `dirsrv_repl_suffixes`, `dirsrv_repl_replica_ids`, and `dirsrv_repl_agreements` in group_vars.
 - Apply on all participating hosts.
 
+Makefile targets (local lab)
+- Single supplier → consumer: `make test_repl`
+- Mesh (2 suppliers + 2 consumers): `make test_repl_mesh`
+
 Example Inventory (group‑driven)
 ```
 [rhds_suppliers]
@@ -101,3 +105,38 @@ Notes & Remedies
 
 Variables
 See `defaults/main.yml` and `meta/arg_specs.yml` for all variables and types.
+
+Replica IDs
+- IDs in `dirsrv_repl_replica_ids` must be keyed by `inventory_hostname` (e.g., `ds-s1`, not the FQDN in `dirsrv_repl_nodes[host]`).
+
+Mesh Example (2 suppliers + 2 consumers)
+```
+dirsrv_repl_nodes:
+  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 389, protocol: LDAP }
+  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 389, protocol: LDAP }
+  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 389, protocol: LDAP }
+  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 389, protocol: LDAP }
+
+dirsrv_repl_replica_ids:
+  "o=example":
+    ds-s1: 1
+    ds-s2: 2
+
+dirsrv_repl_agreements:
+  "o=example":
+    - { from: "ds-s1", to: "ds-s2", name: "s1-to-s2", init: true }
+    - { from: "ds-s2", to: "ds-s1", name: "s2-to-s1", init: false }
+    - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true }
+    - { from: "ds-s2", to: "ds-c2", name: "s2-to-c2", init: true }
+```
+
+ds-replcheck
+- Enable via vars:
+  - `dirsrv_repl_run_replcheck: true`
+  - `dirsrv_replcheck_mode: state|online|offline`
+  - For offline mode, provide LDIF paths under `dirsrv_replcheck_offline_ldif`.
+
+Gotchas
+- The role ensures the suffix (mapping tree) exists on each host before enabling replication.
+- Only create agreements from suppliers/hubs; set `from` accordingly.
+- Schedules can pause init; when `init: true` and a schedule is set, the role warns you.
