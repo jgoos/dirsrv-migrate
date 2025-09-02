@@ -1,7 +1,7 @@
 ---
 - name: Monitor | replication monitor snapshot
   ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     replication monitor
   register: dirsrv_repl_monitor
   changed_when: false
@@ -17,7 +17,7 @@
     local_agmts: >-
       {{ (dirsrv_repl_agreements | dict2items | map(attribute='value') | list | sum(start=[]) | selectattr('from', 'equalto', inventory_hostname) | list) }}
   ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     repl-agmt status --suffix "{{ item_suffix }}" {{ item_agmt.name }}
   vars:
     item_suffix: "{{ item.0 }}"
@@ -58,4 +58,3 @@
       ansible.builtin.debug:
         var: rhds_replcheck_run.stdout
       when: rhds_replcheck_run is defined
-

@@ -3,8 +3,8 @@
 
 # Instances inside containers are named 'localhost' and listen on port 389
 dirsrv_repl_nodes:
-  rhds11: { role: supplier, instance: "localhost", host: "localhost", port: 389, protocol: LDAP }
-  rhds12: { role: consumer, instance: "localhost", host: "localhost", port: 389, protocol: LDAP }
+  rhds11: { role: supplier, instance: "localhost", host: "rhds11", port: 389, protocol: LDAP }
+  rhds12: { role: consumer, instance: "localhost", host: "rhds12", port: 389, protocol: LDAP }
 
 dirsrv_repl_suffixes:
   - "o=example"

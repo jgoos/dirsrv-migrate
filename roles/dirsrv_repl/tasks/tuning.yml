@@ -1,7 +1,7 @@
 ---
 - name: Tuning | Set replication release-timeout per suffix
   ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     replication set --suffix "{{ item }}" --repl-release-timeout {{ dirsrv_repl_release_timeout | int }}
   register: dirsrv_repl_timeout
   changed_when: >-
@@ -15,7 +15,7 @@
 
 - name: Tuning | Configure changelog purge (max-age) per suffix
   ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     replication set-changelog --suffix "{{ item }}" --max-age {{ dirsrv_repl_changelog.max_age }}
   register: dirsrv_repl_purge
   changed_when: >-
@@ -33,4 +33,3 @@
       "Encryption requested (dirsrv_repl_changelog.encrypt=true). Implement stop→enable→verify→start per site policy. Skipping automatic change for safety."
     warn: true
   when: dirsrv_repl_changelog.encrypt | bool
-

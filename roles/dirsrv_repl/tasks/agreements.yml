@@ -24,7 +24,7 @@
 
     - name: Agreements | List existing agreements for suffix {{ suffix }}
       ansible.builtin.command: >-
-        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
         repl-agmt list --suffix "{{ suffix }}"
       register: dirsrv_repl_agmt_list
       changed_when: false
@@ -42,7 +42,7 @@
         init_flag: >-
           {{ (agree.init | default(false)) and (dirsrv_repl_init_mode == 'online') | ternary('--init', '') }}
       ansible.builtin.command: >-
-        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
         repl-agmt create --suffix "{{ suffix }}" --host "{{ target.host }}" --port {{ target.port }} --conn-protocol {{ target.protocol }}
         {{ auth_flags }} {{ init_flag }} {{ agree.name }}
       register: dirsrv_repl_agmt_create
@@ -70,7 +70,7 @@
 
     - name: Agreements | Apply schedule for suffix {{ suffix }}
       ansible.builtin.command: >-
-        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
         repl-agmt set --suffix "{{ suffix }}" --schedule "{{ dirsrv_repl_schedule }}" {{ agree.name }}
       register: dirsrv_repl_agmt_sched
       changed_when: >-
@@ -87,7 +87,7 @@
 
     - name: Agreements | Apply fractional/strip lists for suffix {{ suffix }}
       ansible.builtin.command: >-
-        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
         repl-agmt set {{ agree.name }} --suffix "{{ suffix }}"
         {{ (dirsrv_repl_frac_list | length > 0) | ternary('--frac-list "' ~ (dirsrv_repl_frac_list | join(',')) ~ '"', '') }}
         {{ (dirsrv_repl_frac_list_total | length > 0) | ternary('--frac-list-total "' ~ (dirsrv_repl_frac_list_total | join(',')) ~ '"', '') }}
@@ -112,7 +112,7 @@
       vars:
         max_tries: 30
       ansible.builtin.command: >-
-        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
         repl-agmt init-status --suffix "{{ suffix }}" {{ agree.name }}
       register: dirsrv_repl_init_status
       changed_when: false
@@ -132,4 +132,3 @@
   loop_control:
     label: "{{ item.key }}"
   when: (item.value | selectattr('from', 'equalto', inventory_hostname) | list) | length > 0
-
