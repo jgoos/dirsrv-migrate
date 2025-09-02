@@ -5,7 +5,7 @@
   roles:
     - role: dirsrv_repl
 
-- name: Incremental replication check: add entry on rhds13 and verify everywhere
+- name: "Incremental replication check: add entry on rhds13 and verify everywhere"
   hosts: rhds13
   gather_facts: false
   vars:
@@ -30,7 +30,7 @@
       changed_when: true
       failed_when: false
 
-- name: Verify replication reached consumer rhds12 (via rhds11) and rhds14 + supplier rhds11
+- name: "Verify replication reached consumer rhds12 (via rhds11) and rhds14 + supplier rhds11"
   hosts: rhds11,rhds12,rhds14
   gather_facts: false
   vars:
@@ -55,4 +55,3 @@
       retries: 60
       delay: 2
       until: search.rc == 0
-
