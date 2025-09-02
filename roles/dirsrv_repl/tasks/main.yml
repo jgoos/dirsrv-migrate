@@ -57,20 +57,31 @@
   vars:
     ansible_become: false
 
-- name: Preflight | Guard against bidirectional init on same pair (controller)
-  ansible.builtin.assert:
-    that: >-
-      not dirsrv_repl_guard_bidirectional_init | bool or (
-        dirsrv_repl_agreements | dict2items | map(attribute='value') | list
-        | map('map', attribute='from') | map('list') | list | length
-        ) >= 0
-    fail_msg: >-
-      "Guard placeholder: ensure no A→B and B→A both init=true for the same suffix. Set dirsrv_repl_guard_bidirectional_init=false to bypass."
+- name: Preflight | Build init=true pairs per suffix (controller)
+  ansible.builtin.set_fact:
+    dirsrv_repl_init_pairs: "{{ (dirsrv_repl_init_pairs | default([])) + [ { 'suffix': item.0.key, 'from': item.1.from, 'to': item.1.to } ] }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - dirsrv_repl_agreements | length > 0
+    - item.1.init | default(false)
+    - dirsrv_repl_guard_bidirectional_init | bool
   run_once: true
   delegate_to: localhost
   vars:
     ansible_become: false
-  when: dirsrv_repl_agreements | length > 0
+
+- name: Preflight | Assert no bidirectional init for the same suffix (controller)
+  ansible.builtin.assert:
+    that:
+      - "(dirsrv_repl_init_pairs | default([]) | selectattr('suffix','equalto', item.suffix) | selectattr('from','equalto', item.to) | selectattr('to','equalto', item.from) | list | length) == 0"
+    fail_msg: "Bidirectional init detected for suffix {{ item.suffix }} between {{ item.from }} and {{ item.to }}. Disable one init or run sequentially."
+  loop: "{{ dirsrv_repl_init_pairs | default([]) }}"
+  run_once: true
+  delegate_to: localhost
+  vars:
+    ansible_become: false
 
 - name: Include enable tasks
   ansible.builtin.include_tasks: enable.yml

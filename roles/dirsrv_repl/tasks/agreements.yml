@@ -32,6 +32,7 @@
   register: dirsrv_repl_agmt_list
   changed_when: false
   failed_when: dirsrv_repl_agmt_list.rc != 0
+  no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -58,12 +59,14 @@
   register: dirsrv_repl_agmt_create
   changed_when: dirsrv_repl_agmt_create.rc == 0
   failed_when: dirsrv_repl_agmt_create.rc != 0
+  no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
   when:
     - item.1.from == inventory_hostname
     - item.1.name not in (dirsrv_repl_agmt_list.stdout_lines | default([]))
+    - not ansible_check_mode
 
 - name: Agreements | Warn if schedule configured with init=true (may pause)
   ansible.builtin.debug:
@@ -88,7 +91,8 @@
       'updated' in (dirsrv_repl_agmt_sched.stdout | lower | default('')) or
       'modified' in (dirsrv_repl_agmt_sched.stdout | lower | default(''))
     )
-  failed_when: false
+  failed_when: dirsrv_repl_agmt_sched.rc != 0
+  no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -109,7 +113,8 @@
       'updated' in (dirsrv_repl_agmt_frac.stdout | lower | default('')) or
       'modified' in (dirsrv_repl_agmt_frac.stdout | lower | default(''))
     )
-  failed_when: false
+  failed_when: dirsrv_repl_agmt_sched.rc != 0
+  no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
