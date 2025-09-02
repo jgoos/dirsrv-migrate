@@ -13,7 +13,7 @@
 
 ## Project Structure & Module Organization
 - `site.yml`: Primary playbook orchestrating the DSM migration.
-- `inventory.yml`: Hosts grouped as `dsm_source` and `dsm_target` (group names; not variables).
+- `inventory.yml`: Hosts grouped into source/target groups (e.g., `dirsrv_source`/`dirsrv_target`).
 - `roles/dirsrv_migrate/`: Role implementing migration logic
   - `tasks/`: `main.yml`, `source.yml`, `target.yml`
   - `defaults/main.yml`: Default vars (override in inventory/group_vars)
@@ -25,7 +25,7 @@
 - Syntax check: `ansible-playbook --syntax-check site.yml`
 - Lint (if installed): `ansible-lint` and `yamllint .`
 - Dry run with diff: `ansible-playbook -i inventory.yml site.yml --check --diff`
-- Target a subset: `ansible-playbook -i inventory.yml site.yml --limit dsm_source`
+- Target a subset: `ansible-playbook -i inventory.yml site.yml --limit <source-group>`
 - Set secrets at runtime: `ansible-playbook -i inventory.yml site.yml -e @group_vars/all/vault.yml`
 
 ## Vault Usage
@@ -57,7 +57,7 @@
 ## Security & Configuration Tips
 - Do not commit secrets. Move `dirsrv_password` to Ansible Vault (e.g., `ansible-vault create group_vars/all/vault.yml`) and run with `--ask-vault-pass` or a vault ID.
 - Prefer non-root SSH users with `become: true` (inventory shows `ansible_user: root` only as an example).
-- Keep inventory hostnames accurate; the play relies on single hosts in `dsm_source` and `dsm_target`.
+- Keep inventory hostnames accurate; the play relies on single hosts in the configured source/target groups.
 - Mask secrets in logs: set `no_log: true` on tasks that pass or render sensitive values (e.g., `dirsrv_password`, replication bind_password). Avoid `debug: var=` for secret variables.
 - Prefer `ansible.builtin.command` with `argv` over `shell`. Only use `shell` when needed (pipes, redirection), sanitize inputs, and set explicit `changed_when`/`failed_when`.
 - Pin dependencies: use a `collections/requirements.yml` with explicit versions for collections (e.g., `containers.podman`). Install with `ansible-galaxy collection install -r collections/requirements.yml`.
