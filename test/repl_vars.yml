@@ -1,0 +1,27 @@
+---
+# Replication test variables for Podman compose lab
+
+# Instances inside containers are named 'localhost' and listen on port 389
+dirsrv_repl_nodes:
+  rhds11: { role: supplier, instance: "localhost", host: "localhost", port: 389, protocol: LDAP }
+  rhds12: { role: consumer, instance: "localhost", host: "localhost", port: 389, protocol: LDAP }
+
+dirsrv_repl_suffixes:
+  - "o=example"
+
+dirsrv_repl_replica_ids:
+  "o=example":
+    rhds11: 1
+
+dirsrv_repl_auth:
+  method: SIMPLE
+  bind_dn: "cn=Directory Manager"
+  bind_password: "{{ dirsrv_password }}"
+
+dirsrv_repl_agreements:
+  "o=example":
+    - { from: "rhds11", to: "rhds12", name: "s1-to-s2", init: true }
+
+dirsrv_repl_set_release_timeout: false
+dirsrv_repl_run_replcheck: false
+

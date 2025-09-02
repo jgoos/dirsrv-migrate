@@ -17,7 +17,7 @@ migrate: deps_podman
 	  site.yml $(ARGS)
 
 help:
-	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, verify_389ds, deps_podman, test_389ds, down_389ds, reset_389ds"
+	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_repl, down_389ds, reset_389ds"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
@@ -49,6 +49,14 @@ migrate_pod:
 	  -e @test/compose_vars.yml \
 	  site.yml $(ARGS)
 
+# Run replication role against compose lab
+repl_pod:
+	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	ansible-playbook -i test/inventory.compose.pod.yml \
+	  -e @test/compose_vars.yml \
+	  -e @test/repl_vars.yml \
+	  test/repl.yml $(ARGS)
+
 verify_389ds:
 	@echo "Verifying entries on target (rhds12)"
 	podman exec rhds12 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice | grep -q "uid=alice" && echo "OK: alice present" || (echo "Missing alice" && exit 1)
@@ -63,6 +71,9 @@ deps_podman:
 	ansible-galaxy collection install containers.podman
 
 test_389ds: up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds
+
+# End-to-end replication test (supplier rhds11 -> consumer rhds12)
+test_repl: up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds
 
 down_389ds:
 	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down
