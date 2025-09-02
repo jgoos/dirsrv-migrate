@@ -13,9 +13,6 @@
   when: dirsrv_repl_monitor.stdout is defined
 
 - name: Monitor | Agreement status per local agreements
-  vars:
-    local_agmts: >-
-      {{ (dirsrv_repl_agreements | dict2items | map(attribute='value') | list | sum(start=[]) | selectattr('from', 'equalto', inventory_hostname) | list) }}
   ansible.builtin.command: >-
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     repl-agmt status --suffix "{{ item_suffix }}" {{ item_agmt.name }}

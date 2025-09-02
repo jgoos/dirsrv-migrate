@@ -7,8 +7,7 @@ services:
     environment:
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    ports:
-      - "1389:389"
+    # No host ports needed for tests; use ldapi inside containers
     volumes:
       - type: bind
         source: ../testdata/example.ldif
@@ -20,8 +19,7 @@ services:
     environment:
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    ports:
-      - "2389:389"
+    # No host ports needed for tests; use ldapi inside containers
 
   ds-s2:
     image: quay.io/389ds/dirsrv:latest
@@ -29,8 +27,7 @@ services:
     environment:
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    ports:
-      - "3389:389"
+    # No host ports needed for tests; use ldapi inside containers
 
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
@@ -38,7 +35,6 @@ services:
     environment:
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    ports:
-      - "4389:389"
+    # No host ports needed for tests; use ldapi inside containers
 
 volumes: {}
