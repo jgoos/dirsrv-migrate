@@ -9,7 +9,7 @@ Automates export/import migrations from Red Hat Directory Server (389‑DS) RHDS
 
 ## Repository Structure
 - `site.yml`: Orchestrates validation, source export, and target import.
-- `inventory.yml`: Example hosts grouped as `dsm_source` and `dsm_target`.
+- `inventory.yml`: Example hosts grouped as `dirsrv_source` and `dirsrv_target`.
 - `group_vars/all/dirsrv_mapping.yml`: Defines `dirsrv_host_map` (source→target).
 - `roles/dirsrv_migrate/`: Migration role
   - `tasks/main.yml`: Calls preflight and routes to `source.yml`/`target.yml`.
@@ -57,17 +57,17 @@ Automates export/import migrations from Red Hat Directory Server (389‑DS) RHDS
 - Apply with vault prompt: `ansible-playbook -i inventory.yml site.yml --ask-vault-pass`
 
 Notes
-- Limit stages: `--limit dsm_source` or `--limit dsm_target`.
+- Limit stages: `--limit dirsrv_source` or `--limit dirsrv_target`.
 - Artifacts path: `.ansible/artifacts/<run-label>/<source-host>/` (set `dirsrv_artifact_run` to isolate batches).
 
 
 ## How It Works
 - Validation (localhost): Asserts mapping is 1:1 and hosts exist in the right groups.
-- Source (dsm_source):
+- Source (dirsrv_source):
   - Optional stop/start for offline export when `dirsrv_export_offline: true`.
   - Exports LDIF per backend via `dsconf` (preferred). Fallback: `ldapsearch`.
   - Fetches LDIFs and optional config archive to controller under `.ansible/artifacts`.
-- Target (dsm_target):
+- Target (dirsrv_target):
   - Verifies expected artifacts exist on controller for its mapped source.
   - Copies LDIFs (and optional schema/config), ensures backends, performs import with `dsconf`.
 
@@ -111,7 +111,7 @@ See full defaults in `roles/dirsrv_migrate/defaults/main.yml` and naming notes i
 
 ## Troubleshooting
 - `dsconf not found`: Ensure 389‑DS tools are installed on managed hosts. Preflight probes `dsconf` path.
-- Mapping assertion fails: Keep a strict 1:1 map; all keys in `dsm_source` and all values in `dsm_target`.
+- Mapping assertion fails: Keep a strict 1:1 map; all keys in `dirsrv_source` and all values in `dirsrv_target`.
 - Missing artifacts on target: Re‑run source export, confirm files under `.ansible/artifacts/<run>/<source>/`.
 - Container tests: set `dirsrv_manage_service: false` and use the Podman inventory.
 - Podman on macOS: if you see `proxy already running` when bringing up the lab, re‑run the Makefile targets; we avoid host port mappings and force‑remove stale containers to stabilize compose up/down.

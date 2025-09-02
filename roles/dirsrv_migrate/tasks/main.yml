@@ -9,9 +9,9 @@
 - name: Include source tasks
   ansible.builtin.include_tasks:
     file: source.yml
-  when: inventory_hostname in groups['dsm_source']
+  when: inventory_hostname in groups['dirsrv_source']
 
 - name: Include target tasks
   ansible.builtin.include_tasks:
     file: target.yml
-  when: inventory_hostname in groups['dsm_target']
+  when: inventory_hostname in groups['dirsrv_target']

@@ -12,7 +12,7 @@ Replace hostnames with your real FQDNs, then copy to `inventory.yml` and `group_
 ---
 all:
   children:
-    dsm_source:
+    dirsrv_source:
       hosts:
         rhds11-01.example.com: { ansible_user: root }
         rhds11-02.example.com: { ansible_user: root }
@@ -49,7 +49,7 @@ all:
         rhds11-33.example.com: { ansible_user: root }
         rhds11-34.example.com: { ansible_user: root }
         rhds11-35.example.com: { ansible_user: root }
-    dsm_target:
+    dirsrv_target:
       hosts:
         rhds12-01.example.com: { ansible_user: root }
         rhds12-02.example.com: { ansible_user: root }

@@ -12,7 +12,7 @@
 - Document intent briefly in task names; keep comments short and practical.
 
 ## Project Structure & Module Organization
-- `site.yml`: Primary playbook orchestrating the DSM migration.
+- `site.yml`: Primary playbook orchestrating the directory server migration.
 - `inventory.yml`: Hosts grouped into source/target groups (e.g., `dirsrv_source`/`dirsrv_target`).
 - `roles/dirsrv_migrate/`: Role implementing migration logic
   - `tasks/`: `main.yml`, `source.yml`, `target.yml`

@@ -1,6 +1,6 @@
 ---
 - name: Seed test data in containers (Podman only)
-  hosts: dsm_source
+  hosts: dirsrv_source
   gather_facts: false
   vars:
     ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"

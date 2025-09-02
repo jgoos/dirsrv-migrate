@@ -11,7 +11,7 @@ This document lists configuration areas to migrate when moving data from RHDS 11
 ## Mapping 35 Pairs and Avoiding Overwrites
 
 - Define all 35 source→target pairs in `group_vars/all/dirsrv_mapping.yml` under `dirsrv_host_map`.
-- The playbook validates a strict 1:1 mapping and that every mapped host exists in the appropriate group (`dsm_source` or `dsm_target`).
+- The playbook validates a strict 1:1 mapping and that every mapped host exists in the appropriate group (for example, `dirsrv_source` or `dirsrv_target`).
 - Artifacts are staged on the controller under `{{ dirsrv_artifact_root_effective }}/<source-host>/` and targets pull from their mapped source.
 - To avoid overwriting artifacts across distinct migration runs, set an optional run label:
   - `-e dirsrv_artifact_run=2024-09-01A` (or any descriptive label)
@@ -142,7 +142,7 @@ Notes:
 
 ## Notes on Scale (35 servers)
 - Concurrency-safe on controller: per-source artifact directories prevent collisions between hosts.
-- Use `--limit` to scope subsets during staged rollouts (e.g., `--limit dsm_source[0:9]` then `dsm_target[0:9]`).
+- Use `--limit` to scope subsets during staged rollouts (e.g., `--limit dirsrv_source[0:9]` then `dirsrv_target[0:9]`).
 - Set `dirsrv_artifact_run` for each batch if you want distinct artifact snapshots retained.
 
 ## Local Testing with Podman
