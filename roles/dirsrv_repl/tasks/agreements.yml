@@ -14,7 +14,31 @@
   when:
     - item.1.from == inventory_hostname
 
-- name: Agreements | Create missing agreements
+- name: Agreements | List existing agreements for suffix
+  vars:
+    suffix: "{{ item.0.key }}"
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - list
+      - --suffix
+      - "{{ suffix }}"
+  register: dirsrv_repl_agmt_list
+  changed_when: false
+  failed_when: dirsrv_repl_agmt_list.rc != 0
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+
+- name: Agreements | Create agreement when missing
   vars:
     suffix: "{{ item.0.key }}"
     agree: "{{ item.1 }}"
@@ -28,18 +52,18 @@
     init_flag: >-
       {{ (agree.init | default(false)) and (dirsrv_repl_init_mode == 'online') | ternary('--init', '') }}
   ansible.builtin.shell: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }} repl-agmt list --suffix "{{ suffix }}" | grep -q "^{{ agree.name }}$" \
-    || dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }} repl-agmt create --suffix "{{ suffix }}" --host "{{ target.host }}" --port {{ target.port }} --conn-protocol {{ target.protocol }} {{ auth_flags }} {{ init_flag }} {{ agree.name }}
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }} repl-agmt create --suffix "{{ suffix }}" --host "{{ target.host }}" --port {{ target.port }} --conn-protocol {{ target.protocol }} {{ auth_flags }} {{ init_flag }} {{ agree.name }}
   args:
     executable: /bin/sh
   register: dirsrv_repl_agmt_create
-  changed_when: dirsrv_repl_agmt_create.rc == 0 and (dirsrv_repl_agmt_create.stdout | default('')) | length == 0
-  failed_when: false
+  changed_when: dirsrv_repl_agmt_create.rc == 0
+  failed_when: dirsrv_repl_agmt_create.rc != 0
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
   when:
     - item.1.from == inventory_hostname
+    - item.1.name not in (dirsrv_repl_agmt_list.stdout_lines | default([]))
 
 - name: Agreements | Warn if schedule configured with init=true (may pause)
   ansible.builtin.debug:
