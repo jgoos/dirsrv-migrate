@@ -91,7 +91,7 @@
       'updated' in (dirsrv_repl_agmt_sched.stdout | lower | default('')) or
       'modified' in (dirsrv_repl_agmt_sched.stdout | lower | default(''))
     )
-  failed_when: dirsrv_repl_agmt_frac.rc != 0
+  failed_when: dirsrv_repl_agmt_sched.rc != 0
   no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
