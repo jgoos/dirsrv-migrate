@@ -61,13 +61,12 @@ repl_pod:
 
 verify_389ds:
 	@echo "Verifying entries on target (ds-c1)"
-	podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice | grep -q "uid=alice" && echo "OK: alice present" || (echo "Missing alice" && exit 1)
-	podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=bob | grep -q "uid=bob" && echo "OK: bob present" || (echo "Missing bob" && exit 1)
-	# Verify nested group and service account
-	podman exec ds-c1 ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b 'cn=staff,ou=groups,o=example' -s base uniqueMember | grep -iq "uniqueMember: cn=devs,ou=groups,o=example" && echo "OK: staff includes devs" || (echo "Missing nested group" && exit 1)
-	podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=app-x | grep -q "uid=app-x" && echo "OK: app-x present" || (echo "Missing app-x" && exit 1)
-	# Verify an ACI string imported into data
-	podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example '(aci=*)' aci | grep -q "Devs can write mail" && echo "OK: ACI present" || (echo "Missing data ACI" && exit 1)
+	@verify() { name="$$1" cmd="$$2"; for i in $$(seq 1 60); do eval "$$cmd" >/dev/null 2>&1 && echo "OK: $$name" && return 0; sleep 1; done; echo "Missing $$name" >&2; exit 1; }; \
+	verify "alice present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice | grep -q 'uid=alice'"; \
+	verify "bob present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=bob | grep -q 'uid=bob'"; \
+	verify "staff includes devs" "podman exec ds-c1 ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b 'cn=staff,ou=groups,o=example' -s base uniqueMember | grep -iq 'uniqueMember: cn=devs,ou=groups,o=example'"; \
+	verify "app-x present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=app-x | grep -q 'uid=app-x'"; \
+	verify "ACI present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example '(aci=*)' aci | grep -q 'Devs can write mail'"
 
 deps_podman:
 	ansible-galaxy collection install containers.podman
