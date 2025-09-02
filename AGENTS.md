@@ -51,8 +51,25 @@
 - Commits: use Conventional Commits (e.g., `feat: add target import step`, `fix: correct LDIF path`).
 - PRs include: purpose/impact, sample command used, `--check` output snippet or reasoning, risks/rollback, and linked issues.
 - Screenshots/logs: include relevant task output or diffs for review.
+- No direct pushes to `main`: always work on a feature branch and open a PR.
+
 
 ## Security & Configuration Tips
 - Do not commit secrets. Move `dirsrv_password` to Ansible Vault (e.g., `ansible-vault create group_vars/all/vault.yml`) and run with `--ask-vault-pass` or a vault ID.
 - Prefer non-root SSH users with `become: true` (inventory shows `ansible_user: root` only as an example).
 - Keep inventory hostnames accurate; the play relies on single hosts in `dsm_source` and `dsm_target`.
+- Mask secrets in logs: set `no_log: true` on tasks that pass or render sensitive values (e.g., `dirsrv_password`, replication bind_password). Avoid `debug: var=` for secret variables.
+- Prefer `ansible.builtin.command` with `argv` over `shell`. Only use `shell` when needed (pipes, redirection), sanitize inputs, and set explicit `changed_when`/`failed_when`.
+- Pin dependencies: use a `collections/requirements.yml` with explicit versions for collections (e.g., `containers.podman`). Install with `ansible-galaxy collection install -r collections/requirements.yml`.
+- Container lab hardening: avoid exposing host ports when not needed; prefer LDAPI for local admin operations. Force-remove stale containers before up/down on macOS Podman.
+- Supply chain: prefer versioned image tags or digests for reproducibility in compose files.
+
+## Ansible Best Practices (additions)
+- Idempotence: always set `changed_when`/`failed_when` on command/shell tasks to prevent false positives and to surface real failures.
+- Check mode: destructive operations should respect `ansible_check_mode`; skip when appropriate and explain what would change.
+- Input validation: use `ansible.builtin.assert` early (e.g., topology, unique replica IDs) with actionable `fail_msg`.
+- Namespacing: keep variable prefixes consistent (`dirsrv_*`, `dirsrv_repl_*`) and avoid deprecated aliases.
+
+## Branching & Protection (repo policy)
+- Protect `main`: require PR reviews and passing checks. Disallow force pushes and direct pushes.
+- Use feature branches per change; keep PRs focused and scoped.
