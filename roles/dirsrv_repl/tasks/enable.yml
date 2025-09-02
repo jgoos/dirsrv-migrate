@@ -43,14 +43,11 @@
     --suffix "{{ item }}" --role "{{ repl_role }}"
     {{ ((repl_role == 'supplier') and (repl_id is defined)) | ternary('--replica-id ' ~ repl_id, '') }}
   register: dirsrv_repl_enable
-  changed_when: >-
-    dirsrv_repl_enable.rc == 0 and (
-      ('already enabled' not in (dirsrv_repl_enable.stdout | lower | default(''))) and
-      ('no changes' not in (dirsrv_repl_enable.stdout | lower | default('')))
-    )
+  changed_when: dirsrv_repl_enable.rc == 0
   failed_when: >-
-    dirsrv_repl_enable.rc != 0 and
-    ('already' not in (dirsrv_repl_enable.stdout | lower | default('')))
+    dirsrv_repl_enable.rc != 0 and (
+      'already enabled' not in ((dirsrv_repl_enable.stdout | lower | default('')) + ' ' + (dirsrv_repl_enable.stderr | lower | default('')))
+    )
   loop: "{{ dirsrv_repl_suffixes }}"
   loop_control:
     label: "{{ item }} -> role={{ repl_role }}"
