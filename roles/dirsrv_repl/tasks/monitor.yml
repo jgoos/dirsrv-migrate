@@ -20,13 +20,13 @@
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     repl-agmt status --suffix "{{ item_suffix }}" {{ item_agmt.name }}
   vars:
-    item_suffix: "{{ item.0 }}"
+    item_suffix: "{{ item.0.key }}"
     item_agmt: "{{ item.1 }}"
   register: dirsrv_repl_status
   changed_when: false
   failed_when: false
   with_subelements:
-    - "{{ dirsrv_repl_agreements }}"
+    - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
   when:
     - item_agmt.from == inventory_hostname
