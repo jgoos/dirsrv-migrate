@@ -1,7 +1,7 @@
 ---
 all:
   children:
-    dsm_source:
+    dirsrv_source:
       hosts:
         ds-s1:
           ansible_connection: containers.podman.podman
@@ -11,7 +11,7 @@ all:
           ansible_python_interpreter: auto_silent
           ansible_become: false
           # ds tools in container live in PATH, no SSH needed
-    dsm_target:
+    dirsrv_target:
       hosts:
         ds-c1:
           ansible_connection: containers.podman.podman

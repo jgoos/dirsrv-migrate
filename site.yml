@@ -13,25 +13,25 @@
     - name: Ensure all sources are mapped and targets exist
       ansible.builtin.assert:
         that:
-          - (dirsrv_host_map.keys() | difference(groups['dsm_source'])) | length == 0
-          - (dirsrv_host_map.values() | difference(groups['dsm_target'])) | length == 0
-        fail_msg: "All map keys must be in dsm_source and values in dsm_target"
+          - (dirsrv_host_map.keys() | difference(groups['dirsrv_source'])) | length == 0
+          - (dirsrv_host_map.values() | difference(groups['dirsrv_target'])) | length == 0
+        fail_msg: "All map keys must be in dirsrv_source and values in dirsrv_target"
 
     - name: Ensure 1:1 mapping and expected counts
       ansible.builtin.assert:
         that:
-          - dirsrv_host_map | length == groups['dsm_source'] | length
+          - dirsrv_host_map | length == groups['dirsrv_source'] | length
           - (dirsrv_host_map.values() | unique | length) == (dirsrv_host_map | length)
         fail_msg: "Mapping must be 1:1 and cover all sources"
 
 - name: Dump LDIF and config from RHDS 11 sources
-  hosts: dsm_source
+  hosts: dirsrv_source
   become: true
   roles:
     - dirsrv_migrate
 
 - name: Import data into RHDS 12 targets
-  hosts: dsm_target
+  hosts: dirsrv_target
   become: true
   pre_tasks:
     - name: Determine mapped source host candidates
@@ -46,7 +46,7 @@
       ansible.builtin.assert:
         that:
           - dirsrv_source_host is defined
-          - dirsrv_source_host in groups['dsm_source']
+          - dirsrv_source_host in groups['dirsrv_source']
         fail_msg: "No matching source host found for target {{ inventory_hostname }}"
 
     - name: Init expected artifact vars (controller)

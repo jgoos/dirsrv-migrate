@@ -1,11 +1,11 @@
 ---
 all:
   children:
-    dsm_source:
+    dirsrv_source:
       hosts:
         rhds11.example.com:
           ansible_user: root
-    dsm_target:
+    dirsrv_target:
       hosts:
         rhds12.example.com:
           ansible_user: root

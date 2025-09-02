@@ -78,7 +78,7 @@ Commands:
 Examples:
   $(basename "$0") up && $(basename "$0") bootstrap
   $(basename "$0") migrate --check --diff
-  $(basename "$0") migrate --limit dsm_source
+  $(basename "$0") migrate --limit dirsrv_source
 EOF
 }
 
