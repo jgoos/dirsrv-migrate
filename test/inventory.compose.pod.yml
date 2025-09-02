@@ -3,9 +3,9 @@ all:
   children:
     dsm_source:
       hosts:
-        rhds11:
+        ds-s1:
           ansible_connection: containers.podman.podman
-          ansible_host: rhds11
+          ansible_host: ds-s1
           ansible_user: root
           ansible_remote_tmp: /tmp/.ansible
           ansible_python_interpreter: auto_silent
@@ -13,9 +13,9 @@ all:
           # ds tools in container live in PATH, no SSH needed
     dsm_target:
       hosts:
-        rhds12:
+        ds-c1:
           ansible_connection: containers.podman.podman
-          ansible_host: rhds12
+          ansible_host: ds-c1
           ansible_user: root
           ansible_remote_tmp: /tmp/.ansible
           ansible_python_interpreter: auto_silent

@@ -42,8 +42,8 @@ cmd_up() {
 }
 
 cmd_bootstrap() {
-  podman exec rhds11 /bin/sh -lc '/usr/local/bin/init-389ds-container.sh || sh /usr/local/bin/init-389ds-container.sh' || true
-  podman exec rhds12 /bin/sh -lc '/usr/local/bin/init-389ds-container.sh || sh /usr/local/bin/init-389ds-container.sh' || true
+  podman exec ds-s1 /bin/sh -lc '/usr/local/bin/init-389ds-container.sh || sh /usr/local/bin/init-389ds-container.sh' || true
+  podman exec ds-c1 /bin/sh -lc '/usr/local/bin/init-389ds-container.sh || sh /usr/local/bin/init-389ds-container.sh' || true
 }
 
 cmd_migrate() {

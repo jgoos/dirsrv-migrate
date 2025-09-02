@@ -3,15 +3,15 @@
 
 # Instances inside containers are named 'localhost' and listen on port 389
 dirsrv_repl_nodes:
-  rhds11: { role: supplier, instance: "localhost", host: "rhds11", port: 389, protocol: LDAP }
-  rhds12: { role: consumer, instance: "localhost", host: "rhds12", port: 389, protocol: LDAP }
+  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 389, protocol: LDAP }
+  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 389, protocol: LDAP }
 
 dirsrv_repl_suffixes:
   - "o=example"
 
 dirsrv_repl_replica_ids:
   "o=example":
-    rhds11: 1
+    ds-s1: 1
 
 dirsrv_repl_auth:
   method: SIMPLE
@@ -20,8 +20,7 @@ dirsrv_repl_auth:
 
 dirsrv_repl_agreements:
   "o=example":
-    - { from: "rhds11", to: "rhds12", name: "s1-to-s2", init: true }
+    - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true }
 
 dirsrv_repl_set_release_timeout: false
 dirsrv_repl_run_replcheck: false
-

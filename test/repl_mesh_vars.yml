@@ -1,5 +1,5 @@
 ---
-# Mesh replication test: 2 suppliers (rhds11, rhds13) and 2 consumers (rhds12, rhds14)
+# Mesh replication test: 2 suppliers (ds-s1, ds-s2) and 2 consumers (ds-c1, ds-c2)
 
 dirsrv_password: password
 dirsrv_manage_service: false
@@ -11,15 +11,15 @@ dirsrv_repl_suffixes:
   - "o=example"
 
 dirsrv_repl_nodes:
-  rhds11: { role: supplier, instance: "localhost", host: "rhds11", port: 389, protocol: LDAP }
-  rhds12: { role: consumer, instance: "localhost", host: "rhds12", port: 389, protocol: LDAP }
-  rhds13: { role: supplier, instance: "localhost", host: "rhds13", port: 389, protocol: LDAP }
-  rhds14: { role: consumer, instance: "localhost", host: "rhds14", port: 389, protocol: LDAP }
+  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 389, protocol: LDAP }
+  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 389, protocol: LDAP }
+  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 389, protocol: LDAP }
+  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 389, protocol: LDAP }
 
 dirsrv_repl_replica_ids:
   "o=example":
-    rhds11: 1
-    rhds13: 2
+    ds-s1: 1
+    ds-s2: 2
 
 dirsrv_repl_auth:
   method: SIMPLE
@@ -28,13 +28,12 @@ dirsrv_repl_auth:
 
 dirsrv_repl_agreements:
   "o=example":
-    # Supplier-to-supplier (bi-directional), init from rhds11 to rhds13
-    - { from: "rhds11", to: "rhds13", name: "s1-to-s2", init: true }
-    - { from: "rhds13", to: "rhds11", name: "s2-to-s1", init: false }
+    # Supplier-to-supplier (bi-directional), init from ds-s1 to ds-s2
+    - { from: "ds-s1", to: "ds-s2", name: "s1-to-s2", init: true }
+    - { from: "ds-s2", to: "ds-s1", name: "s2-to-s1", init: false }
     # Supplier-to-consumer
-    - { from: "rhds11", to: "rhds12", name: "s1-to-c1", init: true }
-    - { from: "rhds13", to: "rhds14", name: "s2-to-c2", init: true }
+    - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true }
+    - { from: "ds-s2", to: "ds-c2", name: "s2-to-c2", init: true }
 
 dirsrv_repl_set_release_timeout: false
 dirsrv_repl_run_replcheck: false
-

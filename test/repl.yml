@@ -1,7 +1,6 @@
 ---
-- name: Configure replication between rhds11 (supplier) and rhds12 (consumer)
+- name: Configure replication between ds-s1 (supplier) and ds-c1 (consumer)
   hosts: all
   gather_facts: false
   roles:
     - role: dirsrv_repl
-

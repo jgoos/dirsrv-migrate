@@ -5,8 +5,8 @@
   roles:
     - role: dirsrv_repl
 
-- name: "Incremental replication check: add entry on rhds13 and verify everywhere"
-  hosts: rhds13
+- name: "Incremental replication check: add entry on ds-s2 and verify everywhere"
+  hosts: ds-s2
   gather_facts: false
   vars:
     ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
@@ -20,7 +20,7 @@
       sn: Mesh
       uid: replica-mesh-test
   tasks:
-    - name: Ensure test entry present on supplier rhds13
+    - name: Ensure test entry present on supplier ds-s2
       ansible.builtin.shell: |
         ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}" <<'EOF'
         {{ test_ldif }}
@@ -30,8 +30,8 @@
       changed_when: true
       failed_when: false
 
-- name: "Verify replication reached consumer rhds12 (via rhds11) and rhds14 + supplier rhds11"
-  hosts: rhds11,rhds12,rhds14
+- name: "Verify replication reached consumer ds-c1 (via ds-s1) and ds-c2 + supplier ds-s1"
+  hosts: ds-s1,ds-c1,ds-c2
   gather_facts: false
   vars:
     ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"

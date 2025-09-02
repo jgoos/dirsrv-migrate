@@ -1,30 +1,30 @@
 ---
 all:
   hosts:
-    rhds11:
+    ds-s1:
       ansible_connection: containers.podman.podman
-      ansible_host: rhds11
+      ansible_host: ds-s1
       ansible_user: root
       ansible_remote_tmp: /tmp/.ansible
       ansible_python_interpreter: auto_silent
       ansible_become: false
-    rhds12:
+    ds-c1:
       ansible_connection: containers.podman.podman
-      ansible_host: rhds12
+      ansible_host: ds-c1
       ansible_user: root
       ansible_remote_tmp: /tmp/.ansible
       ansible_python_interpreter: auto_silent
       ansible_become: false
-    rhds13:
+    ds-s2:
       ansible_connection: containers.podman.podman
-      ansible_host: rhds13
+      ansible_host: ds-s2
       ansible_user: root
       ansible_remote_tmp: /tmp/.ansible
       ansible_python_interpreter: auto_silent
       ansible_become: false
-    rhds14:
+    ds-c2:
       ansible_connection: containers.podman.podman
-      ansible_host: rhds14
+      ansible_host: ds-c2
       ansible_user: root
       ansible_remote_tmp: /tmp/.ansible
       ansible_python_interpreter: auto_silent
