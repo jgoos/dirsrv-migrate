@@ -1,0 +1,39 @@
+---
+# Mesh replication test: 2 suppliers (ds-s1, ds-s2) and 2 consumers (ds-c1, ds-c2)
+
+dirsrv_password: password
+dirsrv_manage_service: false
+dirsrv_instance: localhost
+dirsrv_ldapi_socket_path: "/data/run/slapd-localhost.socket"
+dirsrv_ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+
+dirsrv_repl_suffixes:
+  - "o=example"
+
+dirsrv_repl_nodes:
+  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 389, protocol: LDAP }
+  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 389, protocol: LDAP }
+  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 389, protocol: LDAP }
+  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 389, protocol: LDAP }
+
+dirsrv_repl_replica_ids:
+  "o=example":
+    ds-s1: 1
+    ds-s2: 2
+
+dirsrv_repl_auth:
+  method: SIMPLE
+  bind_dn: "cn=Directory Manager"
+  bind_password: "{{ dirsrv_password }}"
+
+dirsrv_repl_agreements:
+  "o=example":
+    # Supplier-to-supplier (bi-directional), init from ds-s1 to ds-s2
+    - { from: "ds-s1", to: "ds-s2", name: "s1-to-s2", init: true }
+    - { from: "ds-s2", to: "ds-s1", name: "s2-to-s1", init: false }
+    # Supplier-to-consumer
+    - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true }
+    - { from: "ds-s2", to: "ds-c2", name: "s2-to-c2", init: true }
+
+dirsrv_repl_set_release_timeout: false
+dirsrv_repl_run_replcheck: false

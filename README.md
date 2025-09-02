@@ -79,10 +79,10 @@ This repo includes a minimal local lab using prebuilt 389‑DS images.
 - Verify: `make verify_389ds`
 
 Files
-- `test/inventory.compose.pod.yml`: Podman connection inventory.
-- `test/compose_mapping.yml`: `rhds11 → rhds12` map.
+- `test/inventory.compose.pod.yml`: Podman connection inventory (ds-s1, ds-c1).
+- `test/compose_mapping.yml`: `ds-s1 → ds-c1` map.
 - `test/compose_vars.yml`: Test vars (e.g., `dirsrv_instance`, `dirsrv_manage_service: false`).
-- `test/seed.yml`: Seeds `testdata/example.ldif` into `rhds11`.
+- `test/seed.yml`: Seeds `testdata/example.ldif` into `ds-s1`.
 
 
 ## Key Variables (override as needed)

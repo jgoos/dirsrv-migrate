@@ -1,0 +1,57 @@
+---
+- name: Configure mesh replication (2 suppliers, 2 consumers)
+  hosts: all
+  gather_facts: false
+  roles:
+    - role: dirsrv_repl
+
+- name: "Incremental replication check: add entry on ds-s2 and verify everywhere"
+  hosts: ds-s2
+  gather_facts: false
+  vars:
+    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    test_dn: "uid=replica-mesh-test,o=example"
+    test_ldif: |
+      dn: uid=replica-mesh-test,o=example
+      objectClass: top
+      objectClass: person
+      objectClass: inetOrgPerson
+      cn: Replica Mesh Test
+      sn: Mesh
+      uid: replica-mesh-test
+  tasks:
+    - name: Ensure test entry present on supplier ds-s2
+      ansible.builtin.shell: |
+        ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}" <<'EOF'
+        {{ test_ldif }}
+        EOF
+      args:
+        executable: /bin/sh
+      changed_when: true
+      failed_when: false
+
+- name: "Verify replication reached consumer ds-c1 (via ds-s1) and ds-c2 + supplier ds-s1"
+  hosts: ds-s1,ds-c1,ds-c2
+  gather_facts: false
+  vars:
+    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    test_dn: "uid=replica-mesh-test,o=example"
+  tasks:
+    - name: Wait for replicated entry to appear
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -Y
+          - EXTERNAL
+          - -H
+          - "{{ ldapi_uri }}"
+          - -b
+          - "{{ test_dn }}"
+          - -s
+          - base
+          - objectClass=*
+      register: search
+      changed_when: false
+      retries: 60
+      delay: 2
+      until: search.rc == 0

@@ -20,11 +20,11 @@ Quick Start
 Example Inventory (group‑driven)
 ```
 [rhds_suppliers]
-ldap1.example.com instance=slapd-prod host=ldap1.example.com port=636 protocol=LDAPS
-ldap2.example.com instance=slapd-prod host=ldap2.example.com port=636 protocol=LDAPS
+ds-s1 instance=slapd-prod host=ldap1.example.com port=636 protocol=LDAPS
+ds-s2 instance=slapd-prod host=ldap2.example.com port=636 protocol=LDAPS
 
 [rhds_consumers]
-replica01.example.com instance=slapd-prod host=replica01.example.com port=636 protocol=LDAPS
+ds-c1 instance=slapd-prod host=replica01.example.com port=636 protocol=LDAPS
 ```
 
 Example Vars (group_vars/all/dirsrv_repl.yml)
@@ -101,4 +101,3 @@ Notes & Remedies
 
 Variables
 See `defaults/main.yml` and `meta/arg_specs.yml` for all variables and types.
-

@@ -150,9 +150,9 @@ Notes:
 The repo includes Podman Compose setups to spin up a source and target 389-DS and exercise the migration end-to-end.
 
 Local test — 389-DS prebuilt image (no SSH):
-- `compose/podman-compose.389ds.yml`: `rhds11` and `rhds12` using `quay.io/389ds/dirsrv`.
+- `compose/podman-compose.389ds.yml`: `ds-s1` (supplier) and `ds-c1` (consumer) using `quay.io/389ds/dirsrv`.
 - `test/inventory.compose.pod.yml`: uses the Podman connection plugin.
-- `test/compose_mapping.yml`: source→target map (`rhds11` → `rhds12`).
+- `test/compose_mapping.yml`: source→target map (`ds-s1` → `ds-c1`).
 - `test/compose_vars.yml`: test vars including `dirsrv_password`.
 
 Usage:
@@ -162,7 +162,7 @@ Run (prebuilt 389-DS + Podman connection):
   ansible-galaxy collection install containers.podman
   make migrate_pod
 
-Re-run safely: artifacts land under `.ansible/artifacts/compose-dev/rhds11/…`. You can change `dirsrv_artifact_run` in `test/compose_vars.yml` to keep multiple snapshots.
+Re-run safely: artifacts land under `.ansible/artifacts/compose-dev/ds-s1/…`. You can change `dirsrv_artifact_run` in `test/compose_vars.yml` to keep multiple snapshots.
 
 ## Runtime Variables (Tuning)
 

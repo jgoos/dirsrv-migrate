@@ -6,41 +6,61 @@
       - dirsrv_password | length > 0
     fail_msg: "Provide Directory Manager credentials via dirsrv_dm_dn and dirsrv_password (vault recommended)."
 
-- name: Enable | Build LDAP URL for local node
+- name: Enable | Build local dsconf connection URL
   ansible.builtin.set_fact:
-    dirsrv_repl_url: "{{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}"
+    dirsrv_repl_conn_url: >-
+      {{
+        (dirsrv_ldapi_uri | default(''))
+        if (dirsrv_ldapi_uri | default('') | length > 0)
+        else ((dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port)
+      }}
 
-- name: Enable | Ensure replication enabled per suffix and role
+- name: Enable | Ensure suffix mapping tree exists (safe)
+  ansible.builtin.shell: >-
+    dsconf {{ dirsrv_repl_this_node.instance }} backend suffix list | grep -q '^{{ item }}$' \
+    || dsconf {{ dirsrv_repl_this_node.instance }} backend create --suffix '{{ item }}' --be-name userRoot
+  args:
+    executable: /bin/sh
+  register: dirsrv_repl_suffix_ensure
+  changed_when: dirsrv_repl_suffix_ensure.rc == 0 and (dirsrv_repl_suffix_ensure.stdout | default('')) | length == 0
+  failed_when: false
+  loop: "{{ dirsrv_repl_suffixes }}"
+
+- name: Enable | Assert replica-id present for suppliers/hubs
   vars:
     repl_role: >-
       {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}
     replica_map: "{{ dirsrv_repl_replica_ids[item] | default({}) }}"
-    repl_id: >-
-      {{ (repl_role == 'supplier') | ternary(replica_map.get(dirsrv_repl_this_node.host), omit) }}
-  block:
-    - name: Enable | Assert replica-id present for suppliers/hubs ({{ item }})
-      ansible.builtin.assert:
-        that:
-          - repl_role != 'supplier' or (repl_id is defined and (repl_id | int) >= 1 and (repl_id | int) <= 65534)
-        fail_msg: "Replica ID required for supplier/hub on suffix {{ item }} (host {{ dirsrv_repl_this_node.host }})"
-    - name: Enable | Run replication enable
-      ansible.builtin.command: >-
-        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}"
-        {{ dirsrv_repl_url }} replication enable
-        --suffix "{{ item }}" --role "{{ repl_role }}"
-        {{ (repl_id is defined) | ternary('--replica-id ' ~ repl_id, '') }}
-      register: dirsrv_repl_enable
-      changed_when: >-
-        dirsrv_repl_enable.rc == 0 and (
-          ('already enabled' not in (dirsrv_repl_enable.stdout | lower | default(''))) and
-          ('no changes' not in (dirsrv_repl_enable.stdout | lower | default('')))
-        )
-      failed_when: >-
-        dirsrv_repl_enable.rc != 0 and
-        ('already' not in (dirsrv_repl_enable.stdout | lower | default('')))
+    repl_id: "{{ replica_map.get(inventory_hostname) }}"
+  ansible.builtin.assert:
+    that:
+      - repl_role != 'supplier' or (repl_id is defined and (repl_id | int) >= 1 and (repl_id | int) <= 65534)
+    fail_msg: "Replica ID required for supplier/hub on suffix {{ item }} (host {{ dirsrv_repl_this_node.host }})"
   loop: "{{ dirsrv_repl_suffixes }}"
   loop_control:
     label: "{{ item }} -> role={{ repl_role }}"
   when:
     - dirsrv_repl_suffixes | length > 0
 
+- name: Enable | Run replication enable
+  vars:
+    repl_role: >-
+      {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}
+    replica_map: "{{ dirsrv_repl_replica_ids[item] | default({}) }}"
+    repl_id: "{{ replica_map.get(inventory_hostname) }}"
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}"
+    {{ dirsrv_repl_conn_url }} replication enable
+    --suffix "{{ item }}" --role "{{ repl_role }}"
+    {{ ((repl_role == 'supplier') and (repl_id is defined)) | ternary('--replica-id ' ~ repl_id, '') }}
+  register: dirsrv_repl_enable
+  changed_when: dirsrv_repl_enable.rc == 0
+  failed_when: >-
+    dirsrv_repl_enable.rc != 0 and (
+      'already enabled' not in ((dirsrv_repl_enable.stdout | lower | default('')) + ' ' + (dirsrv_repl_enable.stderr | lower | default('')))
+    )
+  loop: "{{ dirsrv_repl_suffixes }}"
+  loop_control:
+    label: "{{ item }} -> role={{ repl_role }}"
+  when:
+    - dirsrv_repl_suffixes | length > 0

@@ -1,6 +1,8 @@
 ---
 - name: Preflight | Ensure dsconf/dsctl available
-  ansible.builtin.command: "which {{ item }}"
+  ansible.builtin.shell: "command -v {{ item }}"
+  args:
+    executable: /bin/sh
   register: dirsrv_repl_tools
   changed_when: false
   failed_when: dirsrv_repl_tools.rc != 0
@@ -16,7 +18,7 @@
     msg: "Time sync service not active (chronyd/ntpd/systemd-timesyncd). Replication CSNs require correct time."
     warn: true
   when: >-
-    not (
+    (ansible_facts.services is defined) and not (
       ('chronyd.service' in ansible_facts.services and ansible_facts.services['chronyd.service'].state == 'running') or
       ('ntpd.service' in ansible_facts.services and ansible_facts.services['ntpd.service'].state == 'running') or
       ('systemd-timesyncd.service' in ansible_facts.services and ansible_facts.services['systemd-timesyncd.service'].state == 'running')
@@ -34,37 +36,22 @@
       - dirsrv_repl_nodes[inventory_hostname].protocol in ['LDAP','LDAPS']
     fail_msg: "Define dirsrv_repl_nodes[{{ inventory_hostname }}] with role/instance/host/port/protocol"
 
-- name: Preflight | Set fact: local node
+- name: Preflight | Set fact - local node
   ansible.builtin.set_fact:
     dirsrv_repl_this_node: "{{ dirsrv_repl_nodes[inventory_hostname] }}"
 
 - name: Preflight | Validate unique replica IDs across suppliers/hubs (controller)
   ansible.builtin.assert:
-    that: >-
-      (
-        dirsrv_repl_require_unique_replica_ids | bool
-        | ternary(
-            (
-              dirsrv_repl_suffixes | map('extract', dirsrv_repl_replica_ids, default={})
-              | map('dict2items') | list
-              | map('map', attribute='value')
-              | map('map', attribute='value')
-              | map('list') | list
-              | map('unique') | list
-              | map('length') | list
-            )
-            ==
-            (
-              dirsrv_repl_suffixes | map('extract', dirsrv_repl_replica_ids, default={})
-              | map('dict2items') | list
-              | map('map', attribute='value')
-              | map('list') | list
-              | map('length') | list
-            ),
-            true
+    that:
+      - >-
+        not dirsrv_repl_require_unique_replica_ids | bool or
+        (
+          (dirsrv_repl_replica_ids[item] | default({}) | dict2items | map(attribute='value') | list | length)
+          ==
+          (dirsrv_repl_replica_ids[item] | default({}) | dict2items | map(attribute='value') | list | unique | length)
         )
-      )
-    fail_msg: "Replica IDs must be unique per suffix across suppliers/hubs"
+    fail_msg: "Replica IDs must be unique per suffix across suppliers/hubs (suffix={{ item }})"
+  loop: "{{ dirsrv_repl_suffixes }}"
   run_once: true
   delegate_to: localhost
   vars:
@@ -99,4 +86,3 @@
 
 - name: Include monitor tasks
   ansible.builtin.include_tasks: monitor.yml
-

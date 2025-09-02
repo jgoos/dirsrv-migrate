@@ -1,26 +1,40 @@
 version: "3.8"
 
 services:
-  rhds11:
+  ds-s1:
     image: quay.io/389ds/dirsrv:latest
-    container_name: rhds11
+    container_name: ds-s1
     environment:
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    ports:
-      - "1389:389"
+    # No host ports needed for tests; use ldapi inside containers
     volumes:
       - type: bind
         source: ../testdata/example.ldif
         target: /root/example.ldif
 
-  rhds12:
+  ds-c1:
     image: quay.io/389ds/dirsrv:latest
-    container_name: rhds12
+    container_name: ds-c1
     environment:
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    ports:
-      - "2389:389"
+    # No host ports needed for tests; use ldapi inside containers
+
+  ds-s2:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: ds-s2
+    environment:
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+    # No host ports needed for tests; use ldapi inside containers
+
+  ds-c2:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: ds-c2
+    environment:
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+    # No host ports needed for tests; use ldapi inside containers
 
 volumes: {}
