@@ -1,0 +1,75 @@
+---
+# Inventory-driven topology
+# List of replicated suffixes. Override per environment.
+dirsrv_repl_suffixes: ["{{ dirsrv_default_suffix | default('dc=example,dc=com') }}"]
+
+# Nodes and roles. Map inventory hostnames to replication role and connection info.
+# Example:
+# dirsrv_repl_nodes:
+#   ldap1.example.com: { role: supplier, instance: "slapd-prod", host: "ldap1.example.com", port: 636, protocol: "LDAPS" }
+#   ldap2.example.com: { role: supplier, instance: "slapd-prod", host: "ldap2.example.com", port: 636, protocol: "LDAPS" }
+#   replica01.example.com: { role: consumer, instance: "slapd-prod", host: "replica01.example.com", port: 636, protocol: "LDAPS" }
+dirsrv_repl_nodes: {}
+
+# Auth settings for agreements
+dirsrv_repl_auth:
+  method: "SIMPLE"                  # SIMPLE | SSLCLIENTAUTH
+  bind_dn: "cn=replication manager,cn=config"
+  bind_password: ""                 # store in Ansible Vault
+  bind_group_dn: ""                 # optional group DN when not using a single bind DN
+
+# Directory Manager credentials for administrative operations (enable, tuning)
+dirsrv_dm_dn: "cn=Directory Manager"
+# Password: reuse repo-standard var `dirsrv_password` from Vault
+
+# Supplier/HUB IDs per suffix (1..65534; unique per suffix across suppliers/hubs)
+dirsrv_repl_replica_ids: {}
+
+# Agreement matrix per suffix: supplier/hub -> target entries
+# Example:
+# dirsrv_repl_agreements:
+#   "dc=example,dc=com":
+#     - { from: "ldap1.example.com", to: "ldap2.example.com", name: "s1-to-s2", init: true }
+#     - { from: "ldap1.example.com", to: "replica01.example.com", name: "s1-to-r01", init: true }
+dirsrv_repl_agreements: {}
+
+# Agreement options
+dirsrv_repl_schedule: ""               # e.g. "0800-2200 0246" or empty for always
+dirsrv_repl_frac_list: []              # attributes to exclude from incremental & total
+dirsrv_repl_frac_list_total: []        # attributes to exclude only from total (init) updates
+dirsrv_repl_strip_list:
+  - modifiersname
+  - modifytimestamp
+  - internalmodifiersname
+
+# Replication behavior tuning
+dirsrv_repl_release_timeout: 60        # seconds
+dirsrv_repl_set_release_timeout: true
+
+# Changelog management
+dirsrv_repl_changelog:
+  purge_enabled: true
+  max_age: "1d"                      # 0 disables purge; s/m/h/d/w suffixes supported
+  encrypt: false                      # requires controlled stop/start; see README
+
+# Initialization strategy
+dirsrv_repl_init_mode: "online"        # online | offline
+dirsrv_repl_offline_ldif_src: ""       # path to supplier LDIF when offline
+
+# Monitoring/report
+dirsrv_repl_enable_monitoring_aliases: true
+dirsrv_repl_monitor_aliases: {}         # e.g. { M1: "ldap1.example.com:636", M2: "ldap2.example.com:636" }
+dirsrv_repl_run_replcheck: true
+dirsrv_replcheck_mode: "state"         # state | online | offline
+dirsrv_replcheck_offline_ldif:
+  supplier_ldif: ""
+  consumer_ldif: ""
+
+# Safety
+dirsrv_repl_fail_if_uninitialized_supplier: true
+dirsrv_repl_guard_bidirectional_init: true
+dirsrv_repl_require_unique_replica_ids: true
+
+# Service management (used when offline init or changelog encryption)
+# Uses repo-standard var name already declared elsewhere
+

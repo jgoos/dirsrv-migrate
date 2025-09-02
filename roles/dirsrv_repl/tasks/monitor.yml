@@ -1,0 +1,61 @@
+---
+- name: Monitor | replication monitor snapshot
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+    replication monitor
+  register: dirsrv_repl_monitor
+  changed_when: false
+  failed_when: false
+
+- name: Monitor | Show monitor snapshot (concise)
+  ansible.builtin.debug:
+    var: dirsrv_repl_monitor.stdout
+  when: dirsrv_repl_monitor.stdout is defined
+
+- name: Monitor | Agreement status per local agreements
+  vars:
+    local_agmts: >-
+      {{ (dirsrv_repl_agreements | dict2items | map(attribute='value') | list | sum(start=[]) | selectattr('from', 'equalto', inventory_hostname) | list) }}
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}
+    repl-agmt status --suffix "{{ item_suffix }}" {{ item_agmt.name }}
+  vars:
+    item_suffix: "{{ item.0 }}"
+    item_agmt: "{{ item.1 }}"
+  register: dirsrv_repl_status
+  changed_when: false
+  failed_when: false
+  with_subelements:
+    - "{{ dirsrv_repl_agreements }}"
+    - value
+  when:
+    - item_agmt.from == inventory_hostname
+
+- name: Monitor | ds-replcheck (optional)
+  when: dirsrv_repl_run_replcheck | bool
+  block:
+    - name: Monitor | Determine ds-replcheck availability
+      ansible.builtin.command: which ds-replcheck
+      register: rhds_replcheck_which
+      changed_when: false
+      failed_when: false
+
+    - name: Monitor | Run ds-replcheck in requested mode
+      ansible.builtin.command: >-
+        {% if dirsrv_replcheck_mode == 'state' %}
+        ds-replcheck state
+        {% elif dirsrv_replcheck_mode == 'online' %}
+        ds-replcheck online
+        {% else %}
+        ds-replcheck offline --supplier "{{ dirsrv_replcheck_offline_ldif.supplier_ldif }}" --consumer "{{ dirsrv_replcheck_offline_ldif.consumer_ldif }}"
+        {% endif %}
+      register: rhds_replcheck_run
+      changed_when: false
+      failed_when: false
+      when: rhds_replcheck_which.rc == 0
+
+    - name: Monitor | Show replcheck output
+      ansible.builtin.debug:
+        var: rhds_replcheck_run.stdout
+      when: rhds_replcheck_run is defined
+

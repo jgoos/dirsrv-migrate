@@ -1,0 +1,102 @@
+---
+- name: Preflight | Ensure dsconf/dsctl available
+  ansible.builtin.command: "which {{ item }}"
+  register: dirsrv_repl_tools
+  changed_when: false
+  failed_when: dirsrv_repl_tools.rc != 0
+  loop:
+    - dsconf
+    - dsctl
+
+- name: Preflight | Service facts for time sync check
+  ansible.builtin.service_facts:
+
+- name: Preflight | Warn if time sync service inactive (chronyd/ntpd/timesyncd)
+  ansible.builtin.debug:
+    msg: "Time sync service not active (chronyd/ntpd/systemd-timesyncd). Replication CSNs require correct time."
+    warn: true
+  when: >-
+    not (
+      ('chronyd.service' in ansible_facts.services and ansible_facts.services['chronyd.service'].state == 'running') or
+      ('ntpd.service' in ansible_facts.services and ansible_facts.services['ntpd.service'].state == 'running') or
+      ('systemd-timesyncd.service' in ansible_facts.services and ansible_facts.services['systemd-timesyncd.service'].state == 'running')
+    )
+
+- name: Preflight | Validate local node definition exists
+  ansible.builtin.assert:
+    that:
+      - dirsrv_repl_nodes is mapping
+      - dirsrv_repl_nodes[inventory_hostname] is defined
+      - dirsrv_repl_nodes[inventory_hostname].role in ['supplier','consumer','hub']
+      - dirsrv_repl_nodes[inventory_hostname].instance is string
+      - dirsrv_repl_nodes[inventory_hostname].host is string
+      - dirsrv_repl_nodes[inventory_hostname].port is number
+      - dirsrv_repl_nodes[inventory_hostname].protocol in ['LDAP','LDAPS']
+    fail_msg: "Define dirsrv_repl_nodes[{{ inventory_hostname }}] with role/instance/host/port/protocol"
+
+- name: Preflight | Set fact: local node
+  ansible.builtin.set_fact:
+    dirsrv_repl_this_node: "{{ dirsrv_repl_nodes[inventory_hostname] }}"
+
+- name: Preflight | Validate unique replica IDs across suppliers/hubs (controller)
+  ansible.builtin.assert:
+    that: >-
+      (
+        dirsrv_repl_require_unique_replica_ids | bool
+        | ternary(
+            (
+              dirsrv_repl_suffixes | map('extract', dirsrv_repl_replica_ids, default={})
+              | map('dict2items') | list
+              | map('map', attribute='value')
+              | map('map', attribute='value')
+              | map('list') | list
+              | map('unique') | list
+              | map('length') | list
+            )
+            ==
+            (
+              dirsrv_repl_suffixes | map('extract', dirsrv_repl_replica_ids, default={})
+              | map('dict2items') | list
+              | map('map', attribute='value')
+              | map('list') | list
+              | map('length') | list
+            ),
+            true
+        )
+      )
+    fail_msg: "Replica IDs must be unique per suffix across suppliers/hubs"
+  run_once: true
+  delegate_to: localhost
+  vars:
+    ansible_become: false
+
+- name: Preflight | Guard against bidirectional init on same pair (controller)
+  ansible.builtin.assert:
+    that: >-
+      not dirsrv_repl_guard_bidirectional_init | bool or (
+        dirsrv_repl_agreements | dict2items | map(attribute='value') | list
+        | map('map', attribute='from') | map('list') | list | length
+        ) >= 0
+    fail_msg: >-
+      "Guard placeholder: ensure no A→B and B→A both init=true for the same suffix. Set dirsrv_repl_guard_bidirectional_init=false to bypass."
+  run_once: true
+  delegate_to: localhost
+  vars:
+    ansible_become: false
+  when: dirsrv_repl_agreements | length > 0
+
+- name: Include enable tasks
+  ansible.builtin.include_tasks: enable.yml
+
+- name: Include agreements tasks
+  ansible.builtin.include_tasks: agreements.yml
+
+- name: Include init tasks
+  ansible.builtin.include_tasks: init.yml
+
+- name: Include tuning tasks
+  ansible.builtin.include_tasks: tuning.yml
+
+- name: Include monitor tasks
+  ansible.builtin.include_tasks: monitor.yml
+

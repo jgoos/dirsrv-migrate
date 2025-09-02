@@ -157,7 +157,7 @@ Local test — 389-DS prebuilt image (no SSH):
 
 Usage:
 Run (prebuilt 389-DS + Podman connection):
-  podman compose -f compose/podman-compose.389ds.yml up -d
+  podman-compose -f compose/podman-compose.389ds.yml up -d
   make seed_389ds   # import example LDIF into source container
   ansible-galaxy collection install containers.podman
   make migrate_pod
