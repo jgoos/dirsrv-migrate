@@ -23,4 +23,22 @@ services:
     ports:
       - "2389:389"
 
+  rhds13:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: rhds13
+    environment:
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+    ports:
+      - "3389:389"
+
+  rhds14:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: rhds14
+    environment:
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+    ports:
+      - "4389:389"
+
 volumes: {}

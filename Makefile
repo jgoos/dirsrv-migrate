@@ -17,7 +17,7 @@ migrate: deps_podman
 	  site.yml $(ARGS)
 
 help:
-	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_repl, down_389ds, reset_389ds"
+	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_repl, test_repl_mesh, down_389ds, reset_389ds"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
@@ -96,3 +96,20 @@ clean:
 	  exit 2; \
 	fi
 	@git clean -fdx
+# Mesh replication test (2 suppliers, 2 consumers)
+init_389ds_mesh:
+	@echo "Waiting for LDAP (ldapi) on rhds11, rhds12, rhds13, rhds14..."
+	@for h in rhds11 rhds12 rhds13 rhds14; do \
+	  for i in $$(seq 1 60); do \
+	    podman exec $$h ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
+	    sleep 1; \
+	  done; \
+	done
+
+repl_pod_mesh:
+	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	ansible-playbook -i test/inventory.compose.pod4.yml \
+	  -e @test/repl_mesh_vars.yml \
+	  test/repl_mesh.yml $(ARGS)
+
+test_repl_mesh: up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds
