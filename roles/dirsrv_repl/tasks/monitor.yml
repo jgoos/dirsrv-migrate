@@ -6,6 +6,7 @@
   register: dirsrv_repl_monitor
   changed_when: false
   failed_when: false
+  no_log: true
 
 - name: Monitor | Show monitor snapshot (concise)
   ansible.builtin.debug:
@@ -22,6 +23,7 @@
   register: dirsrv_repl_status
   changed_when: false
   failed_when: false
+  no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value

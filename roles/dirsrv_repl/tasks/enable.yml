@@ -53,6 +53,7 @@
     {{ dirsrv_repl_conn_url }} replication enable
     --suffix "{{ item }}" --role "{{ repl_role }}"
     {{ ((repl_role == 'supplier') and (repl_id is defined)) | ternary('--replica-id ' ~ repl_id, '') }}
+  no_log: true
   register: dirsrv_repl_enable
   changed_when: dirsrv_repl_enable.rc == 0
   failed_when: >-

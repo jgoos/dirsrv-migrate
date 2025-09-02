@@ -22,8 +22,6 @@ help:
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
 up_389ds:
-	- podman rm -f ds-s1 ds-c1 ds-s2 ds-c2 >/dev/null 2>&1 || true
-	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v || true
 	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d
 
 init_389ds:
@@ -79,6 +77,7 @@ test_repl: up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds
 down_389ds:
 	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down
 
+reset_389ds:
 	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v || true
 	rm -rf .ansible/artifacts/compose-dev || true
 

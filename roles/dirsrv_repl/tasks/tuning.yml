@@ -10,6 +10,7 @@
       'modified' in (dirsrv_repl_timeout.stdout | lower | default(''))
     )
   failed_when: false
+  no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_repl_set_release_timeout | bool
 
@@ -24,6 +25,7 @@
       'modified' in (dirsrv_repl_purge.stdout | lower | default(''))
     )
   failed_when: false
+  no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_repl_changelog.purge_enabled | bool
 
