@@ -1,0 +1,46 @@
+---
+- name: Enable | Assert DM credentials provided
+  ansible.builtin.assert:
+    that:
+      - dirsrv_dm_dn | length > 0
+      - dirsrv_password | length > 0
+    fail_msg: "Provide Directory Manager credentials via dirsrv_dm_dn and dirsrv_password (vault recommended)."
+
+- name: Enable | Build LDAP URL for local node
+  ansible.builtin.set_fact:
+    dirsrv_repl_url: "{{ (dirsrv_repl_this_node.protocol | lower) }}://{{ dirsrv_repl_this_node.host }}:{{ dirsrv_repl_this_node.port }}"
+
+- name: Enable | Ensure replication enabled per suffix and role
+  vars:
+    repl_role: >-
+      {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}
+    replica_map: "{{ dirsrv_repl_replica_ids[item] | default({}) }}"
+    repl_id: >-
+      {{ (repl_role == 'supplier') | ternary(replica_map.get(dirsrv_repl_this_node.host), omit) }}
+  block:
+    - name: Enable | Assert replica-id present for suppliers/hubs ({{ item }})
+      ansible.builtin.assert:
+        that:
+          - repl_role != 'supplier' or (repl_id is defined and (repl_id | int) >= 1 and (repl_id | int) <= 65534)
+        fail_msg: "Replica ID required for supplier/hub on suffix {{ item }} (host {{ dirsrv_repl_this_node.host }})"
+    - name: Enable | Run replication enable
+      ansible.builtin.command: >-
+        dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}"
+        {{ dirsrv_repl_url }} replication enable
+        --suffix "{{ item }}" --role "{{ repl_role }}"
+        {{ (repl_id is defined) | ternary('--replica-id ' ~ repl_id, '') }}
+      register: dirsrv_repl_enable
+      changed_when: >-
+        dirsrv_repl_enable.rc == 0 and (
+          ('already enabled' not in (dirsrv_repl_enable.stdout | lower | default(''))) and
+          ('no changes' not in (dirsrv_repl_enable.stdout | lower | default('')))
+        )
+      failed_when: >-
+        dirsrv_repl_enable.rc != 0 and
+        ('already' not in (dirsrv_repl_enable.stdout | lower | default('')))
+  loop: "{{ dirsrv_repl_suffixes }}"
+  loop_control:
+    label: "{{ item }} -> role={{ repl_role }}"
+  when:
+    - dirsrv_repl_suffixes | length > 0
+

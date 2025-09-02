@@ -1,0 +1,90 @@
+argument_specs:
+  main:
+    short_description: Configure RHDS 12 (389-DS) replication (suppliers/consumers/hubs)
+    options:
+      dirsrv_repl_suffixes:
+        type: list
+        elements: str
+        description: List of replicated suffix DNs.
+      dirsrv_repl_nodes:
+        type: dict
+        description: Mapping of inventory_hostname to node details.
+      dirsrv_repl_auth:
+        type: dict
+        options:
+          method:
+            type: str
+            choices: [SIMPLE, SSLCLIENTAUTH]
+          bind_dn:
+            type: str
+          bind_password:
+            type: str
+          bind_group_dn:
+            type: str
+      dirsrv_dm_dn:
+        type: str
+        description: Directory Manager bind DN used for admin commands.
+      dirsrv_password:
+        type: str
+        description: Directory Manager password (use Ansible Vault, e.g., group_vars/all/vault.yml).
+      dirsrv_repl_replica_ids:
+        type: dict
+        description: Per-suffix map of supplier/hub hosts to replica IDs.
+      dirsrv_repl_agreements:
+        type: dict
+        description: Per-suffix list of replication agreement dicts.
+      dirsrv_repl_schedule:
+        type: str
+        description: Optional replication schedule window.
+      dirsrv_repl_frac_list:
+        type: list
+        elements: str
+      dirsrv_repl_frac_list_total:
+        type: list
+        elements: str
+      dirsrv_repl_strip_list:
+        type: list
+        elements: str
+      dirsrv_repl_release_timeout:
+        type: int
+      dirsrv_repl_set_release_timeout:
+        type: bool
+      dirsrv_repl_changelog:
+        type: dict
+        options:
+          purge_enabled:
+            type: bool
+          max_age:
+            type: str
+          encrypt:
+            type: bool
+      dirsrv_repl_init_mode:
+        type: str
+        choices: [online, offline]
+      dirsrv_repl_offline_ldif_src:
+        type: str
+      dirsrv_repl_enable_monitoring_aliases:
+        type: bool
+      dirsrv_repl_monitor_aliases:
+        type: dict
+      dirsrv_repl_run_replcheck:
+        type: bool
+      dirsrv_replcheck_mode:
+        type: str
+        choices: [state, online, offline]
+      dirsrv_replcheck_offline_ldif:
+        type: dict
+        options:
+          supplier_ldif:
+            type: str
+          consumer_ldif:
+            type: str
+      dirsrv_repl_fail_if_uninitialized_supplier:
+        type: bool
+      dirsrv_repl_guard_bidirectional_init:
+        type: bool
+      dirsrv_repl_require_unique_replica_ids:
+        type: bool
+      dirsrv_manage_service:
+        type: bool
+

@@ -3,7 +3,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="${REPO_ROOT}/compose/podman-compose.389ds.yml"
-COMPOSE_CMD=${COMPOSE_CMD:-"podman compose -f ${COMPOSE_FILE}"}
+# Prefer podman-compose if available to avoid wrapper warning from `podman compose`
+if command -v podman-compose >/dev/null 2>&1; then
+  COMPOSE_CMD=${COMPOSE_CMD:-"podman-compose -f ${COMPOSE_FILE}"}
+else
+  COMPOSE_CMD=${COMPOSE_CMD:-"podman compose -f ${COMPOSE_FILE}"}
+fi
 
 ANS_INVENTORY="${REPO_ROOT}/test/inventory.compose.pod.yml"
 ANS_VARS_MAP="${REPO_ROOT}/test/compose_mapping.yml"

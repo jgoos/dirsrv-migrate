@@ -73,7 +73,7 @@ Tags (for troubleshooting)
 ## Local Testing (Podman, no SSH)
 This repo includes a minimal local lab using prebuilt 389‑DS images.
 
-- Bring up containers: `podman compose -f compose/podman-compose.389ds.yml up -d`
+- Bring up containers: `podman-compose -f compose/podman-compose.389ds.yml up -d` (or `podman compose ...` if preferred)
 - Seed example data on source: `make seed_389ds`
 - Migrate via Podman connection: `make migrate_pod` (or `make test_389ds` for full flow)
 - Verify: `make verify_389ds`
@@ -113,4 +113,3 @@ See full defaults in `roles/dirsrv_migrate/defaults/main.yml` and naming notes i
 - Follow the style in `AGENTS.md` (simplicity, clarity, idempotence).
 - Use Conventional Commits (e.g., `feat: add target import step`).
 - Validate with `--check`/`--diff`; include relevant logs or diffs in PRs.
-

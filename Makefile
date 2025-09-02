@@ -1,4 +1,7 @@
 SHELL := /bin/bash
+# Prefer calling podman-compose directly (silences podman wrapper warning),
+# fallback to `podman compose` when podman-compose is not installed.
+COMPOSE_CMD := $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-compose || echo podman compose)
 .DEFAULT_GOAL := test_389ds
 
 .PHONY: migrate help \
@@ -19,7 +22,7 @@ help:
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
 up_389ds:
-	podman compose -f compose/podman-compose.389ds.yml up -d
+	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d
 
 init_389ds:
 	@echo "Waiting for LDAP (ldapi) on rhds11 and rhds12..."
@@ -62,10 +65,9 @@ deps_podman:
 test_389ds: up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds
 
 down_389ds:
-	podman compose -f compose/podman-compose.389ds.yml down
+	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down
 
-reset_389ds:
-	podman compose -f compose/podman-compose.389ds.yml down -v || true
+	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v || true
 	rm -rf .ansible/artifacts/compose-dev || true
 
 # Show what would be removed (untracked + ignored files)

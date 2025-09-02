@@ -1,0 +1,48 @@
+---
+- name: Init | Skip when online mode
+  ansible.builtin.meta: noop
+  when: dirsrv_repl_init_mode != 'offline'
+
+- name: Init | Validate offline LDIF source provided when offline mode
+  ansible.builtin.assert:
+    that:
+      - dirsrv_repl_offline_ldif_src | length > 0
+    fail_msg: "Set dirsrv_repl_offline_ldif_src to the LDIF path for offline init"
+  when: dirsrv_repl_init_mode == 'offline'
+
+- name: Init | Only consumers perform offline ldif2db
+  ansible.builtin.assert:
+    that:
+      - dirsrv_repl_this_node.role == 'consumer'
+    fail_msg: "Offline init only supported on consumers"
+  when: dirsrv_repl_init_mode == 'offline'
+
+- name: Init | Stop instance for offline import (safe)
+  ansible.builtin.service:
+    name: "dirsrv@{{ dirsrv_repl_this_node.instance }}"
+    state: stopped
+  when:
+    - dirsrv_repl_init_mode == 'offline'
+    - dirsrv_manage_service | bool
+    - not ansible_check_mode
+
+- name: Init | Import LDIF via dsctl ldif2db for each suffix
+  ansible.builtin.command: >-
+    dsctl {{ dirsrv_repl_this_node.instance }} ldif2db -n {{ item }} -E {{ dirsrv_repl_offline_ldif_src }}
+  register: dirsrv_repl_ldif2db
+  changed_when: dirsrv_repl_ldif2db.rc == 0
+  failed_when: dirsrv_repl_ldif2db.rc != 0
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - dirsrv_repl_init_mode == 'offline'
+    - not ansible_check_mode
+
+- name: Init | Start instance after offline import
+  ansible.builtin.service:
+    name: "dirsrv@{{ dirsrv_repl_this_node.instance }}"
+    state: started
+  when:
+    - dirsrv_repl_init_mode == 'offline'
+    - dirsrv_manage_service | bool
+    - not ansible_check_mode
+
