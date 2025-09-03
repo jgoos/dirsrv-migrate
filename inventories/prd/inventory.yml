@@ -1,0 +1,21 @@
+---
+all:
+  children:
+    # Migration topology: RHDS 11 sources → RHDS 12 targets
+    dirsrv_source:
+      hosts:
+        prd-rhds11-1:
+          ansible_user: root
+    dirsrv_target:
+      hosts:
+        prd-rhds12-1:
+          ansible_user: root
+
+    # Replication participants for PRD
+    prd_repl:
+      hosts:
+        prd-m1:
+        prd-m2:
+        prd-r1:
+        prd-r2:
+

@@ -1,0 +1,13 @@
+---
+# PRD environment migration variables
+
+# Default suffix for directory data in PRD
+dirsrv_default_suffix: "dc=prod,dc=example,dc=com"
+
+# Source → Target host mapping for PRD migration
+dirsrv_host_map:
+  prd-rhds11-1: prd-rhds12-1
+
+# Optional: label artifacts with environment for easier auditing
+dirsrv_artifact_run: prod
+

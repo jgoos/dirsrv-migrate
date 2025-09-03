@@ -1,0 +1,6 @@
+# QAS Vault (sample). Do NOT commit real secrets. Create the real file with:
+#   ansible-vault create inventories/qas/group_vars/all/vault.yml
+# and set at least:
+
+# dirsrv_password: <secret>
+

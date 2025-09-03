@@ -1,0 +1,13 @@
+---
+# QAS environment migration variables
+
+# Default suffix for directory data in QAS
+dirsrv_default_suffix: "dc=qas,dc=example,dc=com"
+
+# Source → Target host mapping for QAS migration
+dirsrv_host_map:
+  qas-rhds11-1: qas-rhds12-1
+
+# Optional: label artifacts with environment for easier auditing
+dirsrv_artifact_run: qas
+

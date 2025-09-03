@@ -1,0 +1,21 @@
+---
+all:
+  children:
+    # Migration topology: RHDS 11 sources → RHDS 12 targets
+    dirsrv_source:
+      hosts:
+        qas-rhds11-1:
+          ansible_user: root
+    dirsrv_target:
+      hosts:
+        qas-rhds12-1:
+          ansible_user: root
+
+    # Replication participants for QAS (limit plays to this group when using dirsrv_repl)
+    qas_repl:
+      hosts:
+        qas-m1:
+        qas-m2:
+        qas-r1:
+        qas-r2:
+

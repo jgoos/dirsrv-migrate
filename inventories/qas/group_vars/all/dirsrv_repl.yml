@@ -1,0 +1,36 @@
+---
+# QAS environment replication topology
+
+# Replicated suffixes (reuse default suffix)
+dirsrv_repl_suffixes:
+  - "{{ dirsrv_default_suffix }}"
+
+# Participating nodes (keys must match inventory hostnames)
+dirsrv_repl_nodes:
+  qas-m1: { role: supplier, instance: "{{ dirsrv_instance | default('dir') }}", host: "qas-m1", port: 389, protocol: LDAP }
+  qas-m2: { role: supplier, instance: "{{ dirsrv_instance | default('dir') }}", host: "qas-m2", port: 389, protocol: LDAP }
+  qas-r1: { role: consumer, instance: "{{ dirsrv_instance | default('dir') }}", host: "qas-r1", port: 389, protocol: LDAP }
+  qas-r2: { role: consumer, instance: "{{ dirsrv_instance | default('dir') }}", host: "qas-r2", port: 389, protocol: LDAP }
+
+# Unique replica IDs for suppliers/masters
+dirsrv_repl_replica_ids:
+  "{{ dirsrv_default_suffix }}":
+    qas-m1: 1
+    qas-m2: 2
+
+# Agreement authentication (store dirsrv_password in Vault at runtime)
+dirsrv_repl_auth:
+  method: SIMPLE
+  bind_dn: "cn=Directory Manager"
+  bind_password: "{{ dirsrv_password }}"
+
+# Agreements: master↔master, and both masters → both replicas
+dirsrv_repl_agreements:
+  "{{ dirsrv_default_suffix }}":
+    - { from: "qas-m1", to: "qas-m2", name: "m1-to-m2", init: true }
+    - { from: "qas-m2", to: "qas-m1", name: "m2-to-m1", init: false }
+    - { from: "qas-m1", to: "qas-r1", name: "m1-to-r1", init: true }
+    - { from: "qas-m2", to: "qas-r1", name: "m2-to-r1", init: false }
+    - { from: "qas-m1", to: "qas-r2", name: "m1-to-r2", init: true }
+    - { from: "qas-m2", to: "qas-r2", name: "m2-to-r2", init: false }
+
