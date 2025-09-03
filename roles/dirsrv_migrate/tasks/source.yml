@@ -1,3 +1,6 @@
+---
+# yamllint disable rule:line-length
+
 - name: Ensure local artifact root directory exists
   ansible.builtin.file:
     path: "{{ dirsrv_artifact_root_effective }}"
