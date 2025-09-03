@@ -95,6 +95,126 @@
   when: not ansible_check_mode
   tags: [artifacts]
 
+- name: Build list of local LDIF artifact paths (controller)
+  ansible.builtin.set_fact:
+    dirsrv_local_ldif_files: "{{ dirsrv_backends.keys() | list | map('regex_replace', '^(.*)$', ([dirsrv_artifact_root_effective, inventory_hostname, 'migration-' ~ '\\1' ~ '.ldif'] | path_join)) | list }}"
+  connection: local
+  delegate_to: localhost
+  become: false
+
+## Split LDIFs: create cleaned + removed; gzip original and removed (controller)
+- name: Stat local LDIF artifacts before split (controller)
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ dirsrv_local_ldif_files | default([]) }}"
+  register: _ldif_local_stat
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Build list of existing local LDIFs (controller)
+  ansible.builtin.set_fact:
+    dirsrv_local_ldif_files_existing: "{{ _ldif_local_stat.results | default([]) | selectattr('stat.exists', 'defined') | selectattr('stat.exists') | map(attribute='item') | list }}"
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Count entries in original LDIFs (controller)
+  ansible.builtin.command:
+    argv: ["grep", "-Eic", "^dn::?", "{{ item }}"]
+  loop: "{{ dirsrv_local_ldif_files_existing | default([]) }}"
+  register: _ldif_pre_counts
+  changed_when: false
+  failed_when: _ldif_pre_counts.rc > 1  # allow rc=1 (no matches)
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Split LDIF (clean vs removed) and compress artifacts (controller)
+  ldif_filter_split:
+    src: "{{ item }}"
+    clean: "{{ item | regex_replace('\\.ldif$', '.cleaned.ldif') }}"
+    removed: "{{ item | regex_replace('\\.ldif$', '.removed.ldif') }}"
+    dn_regex_any:
+      - "^cn=repl"
+    oc_all:
+      - ["ldapsubentry", "extensibleObject"]
+    compress_removed: true
+    compress_orig: true
+  loop: "{{ dirsrv_local_ldif_files_existing | default([]) }}"
+  when: not ansible_check_mode
+  connection: local
+  delegate_to: localhost
+  become: false
+  register: _ldif_split_results
+  tags: [artifacts]
+
+- name: Log split results (kept vs removed)
+  ansible.builtin.debug:
+    msg:
+      - "File: {{ item.item }}"
+      - "Kept entries: {{ item.kept | default('n/a') }}"
+      - "Removed entries: {{ item.removed | default('n/a') }}"
+      - "Clean: {{ item.clean | default('n/a') }}"
+      - "Removed file: {{ item.removed_file | default('n/a') }}"
+      - "Original gz: {{ item.orig_compressed | default('n/a') }}"
+  loop: "{{ _ldif_split_results.results | default([]) }}"
+  when: _ldif_split_results is defined
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Build list of cleaned LDIF artifact paths (controller)
+  ansible.builtin.set_fact:
+    dirsrv_local_ldif_files_cleaned: "{{ (dirsrv_local_ldif_files_existing | default([])) | map('regex_replace', '\\.(ldif)$', '.cleaned.\\1') | list }}"
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Count entries in cleaned LDIFs (controller)
+  ansible.builtin.command:
+    argv: ["grep", "-Eic", "^dn::?", "{{ item }}"]
+  loop: "{{ dirsrv_local_ldif_files_cleaned | default([]) }}"
+  register: _ldif_clean_counts
+  changed_when: false
+  failed_when: _ldif_clean_counts.rc > 1  # allow rc=1 (no matches)
+  when: not ansible_check_mode
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Assert LDIF counts match (original vs kept/removed vs cleaned)
+  ansible.builtin.assert:
+    that:
+      - ((_ldif_pre_counts.results[idx].stdout | default('0')) | int) == (((_ldif_split_results.results[idx].kept | default(0)) | int) + ((_ldif_split_results.results[idx].removed | default(0)) | int))
+      - ((_ldif_clean_counts.results[idx].stdout | default('0')) | int) == ((_ldif_split_results.results[idx].kept | default(0)) | int)
+    fail_msg: >-
+      LDIF count mismatch for {{ dirsrv_local_ldif_files_existing[idx] }}:
+      pre={{ (_ldif_pre_counts.results[idx].stdout | default('0')) | int }},
+      kept={{ (_ldif_split_results.results[idx].kept | default(0)) | int }},
+      removed={{ (_ldif_split_results.results[idx].removed | default(0)) | int }},
+      cleaned={{ (_ldif_clean_counts.results[idx].stdout | default('0')) | int }}
+  loop: "{{ range(0, (dirsrv_local_ldif_files_existing | default([]) | length)) | list }}"
+  loop_control:
+    index_var: idx
+  when: not ansible_check_mode and (dirsrv_local_ldif_files_existing | default([]) | length) > 0
+  connection: local
+  delegate_to: localhost
+  become: false
+
+- name: Clean exported LDIF artifacts with configured patterns (controller)
+  ansible.builtin.replace:
+    backup: true
+    path: "{{ item.0 }}"
+    regexp: "{{ item.1.regexp }}"
+    replace: "{{ item.1.replace | default('') }}"
+  loop: "{{ (dirsrv_local_ldif_files_cleaned | default([])) | product(dirsrv_cleanup_patterns_data | default([])) | list }}"
+  connection: local
+  delegate_to: localhost
+  become: false
+  when: not ansible_check_mode
+  tags: [artifacts]
+
 - name: Create archive of instance config
   ansible.builtin.command:
     argv:

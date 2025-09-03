@@ -118,6 +118,38 @@ Checklist for ACIs:
 - Do not copy the changelog database or replication agreements.
 - Avoid copying package‑managed schema files; use RHDS 12’s stock versions.
 
+## LDIF Split and Filtering
+
+Some operational/replication housekeeping entries are exported with your data but should not be imported on a different server. The role now performs a streaming split of each exported LDIF on the controller into kept vs removed entries and compresses the space‑saving artifacts.
+
+Artifacts per backend under `{{ dirsrv_artifact_root_effective }}/<source-host>/`:
+- `migration-<backend>.cleaned.ldif`: kept entries (plain text)
+- `migration-<backend>.removed.ldif.gz`: filtered entries (gzipped)
+- `migration-<backend>.ldif.gz`: original export compressed after split
+
+Filtering rules (drop entire entry if any match):
+- DN starts with `cn=repl` (case‑insensitive)
+- Entry has both `objectClass: ldapsubentry` and `objectClass: extensibleObject`
+
+Counts (`kept`, `removed`) are returned and logged; the role asserts integrity by ensuring `orig_count == kept + removed` at the module level.
+
+Optional additional cleanup:
+- Variable: `dirsrv_cleanup_patterns_data` — list of multi‑line regex replacements applied to the cleaned LDIFs after the split (controller and again on target; idempotent). This is only needed for environment‑specific rules beyond the built‑in ones above.
+
+Example optional override (group_vars/all/dirsrv.yml):
+
+```
+dirsrv_cleanup_patterns_data:
+  - name: example_remove_legacy_entries
+    regexp: "(?mis)^dn:\s*cn=legacy.*?(?=^dn: |\\Z)"
+    replace: ''
+```
+
+Notes:
+- Patterns use Python `re` with inline flags (e.g., `(?m)` multiline, `(?s)` dotall).
+- When patterns modify the cleaned LDIF, a backup of the cleaned file is created.
+- Keep patterns specific to avoid removing application data inadvertently.
+
 ## Minimal Checklist (per target)
 - Schema parity: custom schema files present under `/etc/dirsrv/slapd-<instance>/schema/`.
 - Backends: definitions created; indexes present (create/reindex as needed).
