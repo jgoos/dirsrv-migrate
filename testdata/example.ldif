@@ -110,3 +110,40 @@ givenName: App
 uid: app-x
 mail: app-x@example.com
 userPassword: password
+
+# --- Replication housekeeping samples (for filter testing) ---
+# These represent operational subentries created by replication plugins.
+# They should be stripped post-export and not imported on different servers.
+
+dn: cn=repl keep alive 11886,o=example
+objectClass: top
+objectClass: ldapsubentry
+objectClass: extensibleObject
+cn: repl keep alive 11886
+
+dn: cn=REPL KEEP ALIVE 42,o=example
+objectClass: top
+objectClass: ldapsubentry
+objectClass: extensibleObject
+cn: REPL KEEP ALIVE 42
+
+dn: cn=repl-keep-alive-777,o=example
+objectClass: top
+objectClass: ldapsubentry
+objectClass: extensibleObject
+cn: repl-keep-alive-777
+
+# This one should NOT match the default pattern if variants are not enabled,
+# but is removed by our example broader variant filter above.
+dn: cn=repl keepalive 999,o=example
+objectClass: top
+objectClass: ldapsubentry
+objectClass: extensibleObject
+cn: repl keepalive 999
+
+# A non-replication ldapSubentry to ensure we don't blanket-remove all subentries
+dn: cn=monitor stub,o=example
+objectClass: top
+objectClass: ldapsubentry
+objectClass: extensibleObject
+cn: monitor stub
