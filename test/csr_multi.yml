@@ -1,0 +1,40 @@
+---
+- name: "Generate & collect CSRs (multi-instance: localhost + extra)"
+  hosts: ds-s1
+  gather_facts: false
+  vars:
+    dirsrv_csr:
+      instance_discovery: list
+      instances: ["localhost", "extra"]
+      force: false
+    dirsrv_csr_sans:
+      dns: ["{{ inventory_hostname }}", "ldap.example.test"]
+      ip: []
+
+  pre_tasks:
+    - name: Prepare fake extra instance directory
+      ansible.builtin.file:
+        path: /etc/dirsrv/slapd-extra
+        state: directory
+        owner: dirsrv
+        group: dirsrv
+        mode: "0750"
+
+    - name: Create pin.txt for extra instance NSS
+      ansible.builtin.copy:
+        dest: /etc/dirsrv/slapd-extra/pin.txt
+        content: "password\n"
+        owner: dirsrv
+        group: dirsrv
+        mode: "0640"
+
+    - name: Create pre-existing CSR for extra instance
+      ansible.builtin.copy:
+        dest: /etc/dirsrv/slapd-extra/Server-Cert.csr
+        content: "-----BEGIN CERTIFICATE REQUEST-----\nFAKE-EXTRA\n-----END CERTIFICATE REQUEST-----\n"
+        owner: dirsrv
+        group: dirsrv
+        mode: "0640"
+
+  roles:
+    - role: dirsrv_tls_csr

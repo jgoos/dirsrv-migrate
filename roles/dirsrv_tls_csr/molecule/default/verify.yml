@@ -1,0 +1,27 @@
+---
+- name: Verify
+  hosts: localhost
+  gather_facts: false
+  vars:
+    dest_dir: "{{ playbook_dir }}/../../../../.ansible/artifacts/tls/instance"
+  tasks:
+    - name: Check CSR file exists locally
+      ansible.builtin.stat:
+        path: "{{ dest_dir }}/instance-test.csr"
+      register: _csr_local
+
+    - name: Assert CSR exists
+      ansible.builtin.assert:
+        that:
+          - _csr_local.stat.exists
+
+    - name: Check manifest exists locally
+      ansible.builtin.stat:
+        path: "{{ dest_dir }}/csr-info.yml"
+      register: _manifest_local
+
+    - name: Assert manifest exists
+      ansible.builtin.assert:
+        that:
+          - _manifest_local.stat.exists
+

@@ -1,0 +1,21 @@
+---
+dependency:
+  name: galaxy
+driver:
+  name: delegated
+  options:
+    manage_localhost: true
+lint: |
+  set -e
+  ansible-lint || true
+platforms:
+  - name: instance
+provisioner:
+  name: ansible
+  playbooks:
+    converge: converge.yml
+verifier:
+  name: ansible
+  playbooks:
+    verify: verify.yml
+

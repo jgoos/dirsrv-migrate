@@ -1,0 +1,97 @@
+---
+- name: Set CSR and NSS DB paths for instance (certutil)
+  ansible.builtin.set_fact:
+    dirsrv_csr_csr_path: "/etc/dirsrv/slapd-{{ dirsrv_csr_instance }}/{{ dirsrv_csr_server_cert_filename }}"
+    dirsrv_csr_nssdb_dir: "/etc/dirsrv/slapd-{{ dirsrv_csr_instance }}"
+  tags: [tls, csr]
+
+- name: Stat CSR path before generation (certutil)
+  ansible.builtin.stat:
+    path: "{{ dirsrv_csr_csr_path }}"
+  register: _csr_stat_pre
+  tags: [tls, csr]
+
+- name: Assert certutil present when fallback needed
+  ansible.builtin.assert:
+    that:
+      - (_certutil_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
+    fail_msg: "certutil not found. Install nss-tools for fallback CSR generation."
+  tags: [preflight, tls, csr]
+
+- name: Locate NSS DB password file (pin.txt or pwdfile.txt)
+  block:
+    - ansible.builtin.stat:
+        path: "{{ [dirsrv_csr_nssdb_dir, 'pin.txt'] | path_join }}"
+      register: _pin_stat
+    - ansible.builtin.stat:
+        path: "{{ [dirsrv_csr_nssdb_dir, 'pwdfile.txt'] | path_join }}"
+      register: _pwd_stat
+    - ansible.builtin.set_fact:
+        dirsrv_csr_pwdfile: >-
+          {{ (_pin_stat.stat.exists | default(false)) | ternary(_pin_stat.stat.path, (_pwd_stat.stat.exists | default(false)) | ternary(_pwd_stat.stat.path, '')) }}
+    - ansible.builtin.assert:
+        that:
+          - dirsrv_csr_pwdfile | length > 0
+        fail_msg: "pin.txt/pwdfile.txt not found in {{ dirsrv_csr_nssdb_dir }}; required for NSS DB access."
+  tags: [tls, csr]
+
+- name: Build certutil key args
+  ansible.builtin.set_fact:
+    dirsrv_csr_certutil_key_args: >-
+      {{ ((dirsrv_csr.key_type | default('rsa')) == 'ecdsa')
+          | ternary(
+              ['-k','ec','-q', (dirsrv_csr.ecdsa_curve | default('prime256v1'))],
+              ['-k','rsa','-g', ((dirsrv_csr.key_size | default(4096)) | string)]
+            ) }}
+  tags: [tls, csr]
+
+- name: Build certutil extSAN string
+  ansible.builtin.set_fact:
+    dirsrv_csr_extsan: >-
+      {{ (
+            (dirsrv_csr_dns_sans | default([]) | map('regex_replace', '^', 'dns:') | list)
+            +
+            (dirsrv_csr_ip_sans | default([]) | map('regex_replace', '^', 'ip:') | list)
+         ) | join(',') }}
+  tags: [tls, csr]
+
+- name: Generate CSR with certutil
+  ansible.builtin.command:
+    argv: "{{ [ dirsrv_certutil_bin, '-R', '-d', ('sql:' ~ dirsrv_csr_nssdb_dir), '-f', dirsrv_csr_pwdfile, '-s', dirsrv_csr_subject, '--extSAN', dirsrv_csr_extsan, '-Z', (dirsrv_csr.sig_algo | default('SHA256')), '-a', '-o', dirsrv_csr_csr_path ] + (dirsrv_csr_certutil_key_args | default([])) }}"
+  register: _certutil_gen
+  changed_when: true
+  failed_when: _certutil_gen.rc != 0
+  when:
+    - (not _csr_stat_pre.stat.exists) or (dirsrv_csr.force | default(false)) | bool
+    - not ansible_check_mode
+  tags: [tls, csr]
+
+- name: Normalize CSR permissions (certutil)
+  ansible.builtin.file:
+    path: "{{ dirsrv_csr_csr_path }}"
+    owner: dirsrv
+    group: dirsrv
+    mode: "0640"
+  when: ( _csr_stat_pre.stat.exists or (dirsrv_csr.force | default(false)) | bool ) and not ansible_check_mode
+  tags: [security, tls, csr]
+
+- name: Stat CSR to compute sha256 (certutil)
+  ansible.builtin.stat:
+    path: "{{ dirsrv_csr_csr_path }}"
+    checksum_algorithm: sha256
+  register: _csr_stat_post
+  tags: [tls, csr]
+
+- name: Append result for instance (certutil)
+  ansible.builtin.set_fact:
+    dirsrv_csr_results: "{{ (dirsrv_csr_results | default([])) + [ {
+      'cn': inventory_hostname,
+      'sans': { 'dns': dirsrv_csr_dns_sans | default([]), 'ip': dirsrv_csr_ip_sans | default([]) },
+      'instance': dirsrv_csr_instance,
+      'tool': 'certutil',
+      'tool_path': dirsrv_certutil_bin,
+      'sha256': _csr_stat_post.stat.checksum | default(''),
+      'generated_at': ansible_date_time.iso8601 | default(''),
+      'csr_path': dirsrv_csr_csr_path
+    } ] }}"
+  tags: [tls, csr, artifacts]

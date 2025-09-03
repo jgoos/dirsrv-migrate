@@ -1,0 +1,68 @@
+---
+- name: Set CSR path for instance (dsctl)
+  ansible.builtin.set_fact:
+    dirsrv_csr_csr_path: "/etc/dirsrv/slapd-{{ dirsrv_csr_instance }}/{{ dirsrv_csr_server_cert_filename }}"
+  tags: [tls, csr]
+
+- name: Stat CSR path before generation (dsctl)
+  ansible.builtin.stat:
+    path: "{{ dirsrv_csr_csr_path }}"
+  register: _csr_stat_pre
+  tags: [tls, csr]
+
+- name: Probe dsctl CSR support for instance
+  ansible.builtin.command:
+    argv: ["{{ dirsrv_dsctl_bin }}", "{{ dirsrv_csr_instance }}", "tls", "generate-server-cert-csr", "--help"]
+  register: _dsctl_csr_help
+  changed_when: false
+  failed_when: false
+  tags: [tls, csr]
+
+- name: Generate CSR with dsctl (if supported)
+  ansible.builtin.command:
+    argv: "{{ [ dirsrv_dsctl_bin, dirsrv_csr_instance, 'tls', 'generate-server-cert-csr', '-s', dirsrv_csr_subject ] + (dirsrv_csr_dns_sans | default([])) }}"
+  register: _dsctl_gen
+  changed_when: true
+  failed_when: _dsctl_gen.rc != 0
+  tags: [tls, csr]
+  when:
+    - (_dsctl_csr_help.rc | default(1)) == 0
+    - not ansible_check_mode
+    - (not _csr_stat_pre.stat.exists) or (dirsrv_csr.force | default(false)) | bool
+
+- name: Normalize CSR permissions (dsctl)
+  ansible.builtin.file:
+    path: "{{ dirsrv_csr_csr_path }}"
+    owner: dirsrv
+    group: dirsrv
+    mode: "0640"
+  when: ( _csr_stat_pre.stat.exists or (dirsrv_csr.force | default(false)) | bool ) and not ansible_check_mode
+  tags: [security, tls, csr]
+
+- name: Stat CSR to compute sha256 (dsctl)
+  ansible.builtin.stat:
+    path: "{{ dirsrv_csr_csr_path }}"
+    checksum_algorithm: sha256
+  register: _csr_stat_post
+  tags: [tls, csr]
+
+- name: Append result for instance (dsctl)
+  ansible.builtin.set_fact:
+    dirsrv_csr_results: "{{ (dirsrv_csr_results | default([])) + [ {
+      'cn': inventory_hostname,
+      'sans': { 'dns': dirsrv_csr_dns_sans | default([]), 'ip': dirsrv_csr_ip_sans | default([]) },
+      'instance': dirsrv_csr_instance,
+      'tool': 'dsctl',
+      'tool_path': dirsrv_dsctl_bin,
+      'sha256': _csr_stat_post.stat.checksum | default(''),
+      'generated_at': ansible_date_time.iso8601 | default(''),
+      'csr_path': dirsrv_csr_csr_path
+    } ] }}"
+  when: (_dsctl_csr_help.rc | default(1)) == 0
+  tags: [tls, csr, artifacts]
+
+- name: Fallback to certutil when dsctl CSR not supported
+  ansible.builtin.include_tasks:
+    file: generate_with_certutil.yml
+  when: (_dsctl_csr_help.rc | default(1)) != 0
+  tags: [tls, csr]

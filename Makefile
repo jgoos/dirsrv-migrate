@@ -6,7 +6,10 @@ COMPOSE_CMD := $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-
 
 .PHONY: migrate help \
 	up_389ds init_389ds seed_389ds migrate_pod deps_podman test_389ds verify_389ds down_389ds reset_389ds \
-	clean clean_dry test_ldif_filter
+	clean clean_dry test_ldif_filter csr_pod verify_csr test_csr
+
+# Additional CSR scenarios
+.PHONY: csr_pod_multi verify_csr_multi test_csr_edges
 
 # Default migrate uses Podman connection (no sshpass/SSH required)
 migrate: deps_podman
@@ -17,7 +20,7 @@ migrate: deps_podman
 	  site.yml $(ARGS)
 
 help:
-	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, down_389ds, reset_389ds"
+	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, test_csr, down_389ds, reset_389ds"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
@@ -94,6 +97,35 @@ test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds
 # End-to-end replication test (supplier ds-s1 -> consumer ds-c1)
 test_repl: up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds
 
+# Run CSR role against compose lab
+csr_pod:
+	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	ansible-playbook -i test/inventory.compose.pod.yml \
+	  -e @test/compose_vars.yml \
+	  -e dirsrv_artifact_root_effective=$(PWD)/.ansible/artifacts \
+	  test/csr.yml $(ARGS)
+
+# Verify CSR artifacts on controller
+verify_csr:
+	@set -e; \
+	ART_DIR_BASE="$(PWD)/.ansible/artifacts/tls"; \
+	S1_DIR="$$ART_DIR_BASE/ds-s1"; \
+	C1_DIR="$$ART_DIR_BASE/ds-c1"; \
+	S1_CSR="$$S1_DIR/ds-s1-localhost.csr"; \
+	C1_CSR="$$C1_DIR/ds-c1-localhost.csr"; \
+	S1_MAN="$$S1_DIR/csr-info.yml"; \
+	C1_MAN="$$C1_DIR/csr-info.yml"; \
+	[ -f "$$S1_CSR" ] || { echo "Missing CSR: $$S1_CSR" >&2; exit 1; }; \
+	[ -f "$$C1_CSR" ] || { echo "Missing CSR: $$C1_CSR" >&2; exit 1; }; \
+	[ -f "$$S1_MAN" ] || { echo "Missing manifest: $$S1_MAN" >&2; exit 1; }; \
+	[ -f "$$C1_MAN" ] || { echo "Missing manifest: $$C1_MAN" >&2; exit 1; }; \
+	grep -q "tool: dsctl" "$$S1_MAN" || { echo "Expected dsctl path in $$S1_MAN" >&2; exit 1; }; \
+	grep -q "tool: certutil" "$$C1_MAN" || { echo "Expected certutil path in $$C1_MAN" >&2; exit 1; }; \
+	echo "OK: CSR artifacts and manifests look sane"
+
+# End-to-end CSR test
+test_csr: up_389ds init_389ds deps_podman csr_pod verify_csr
+
 down_389ds:
 	$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down
 
@@ -134,3 +166,24 @@ repl_pod_mesh:
 	  test/repl_mesh.yml $(ARGS)
 
 test_repl_mesh: up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds
+# Run CSR role for multi-instance scenario on ds-s1
+csr_pod_multi:
+	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	ansible-playbook -i test/inventory.compose.pod.yml \
+	  -e @test/compose_vars.yml \
+	  -e dirsrv_artifact_root_effective=$(PWD)/.ansible/artifacts \
+	  test/csr_multi.yml $(ARGS)
+
+# Verify multi-instance CSR artifacts
+verify_csr_multi:
+	@set -e; \
+	ART_DIR_BASE="$(PWD)/.ansible/artifacts/tls"; \
+	S1_DIR="$$ART_DIR_BASE/ds-s1"; \
+	EXTRA_CSR="$$S1_DIR/ds-s1-extra.csr"; \
+	MAN="$$S1_DIR/csr-info.yml"; \
+	[ -f "$$EXTRA_CSR" ] || { echo "Missing CSR for extra: $$EXTRA_CSR" >&2; exit 1; }; \
+	grep -q "instance: extra" "$$MAN" || { echo "Manifest missing 'extra' instance entry" >&2; exit 1; }; \
+	echo "OK: multi-instance CSR artifacts present"
+
+# Aggregate CSR edge tests
+test_csr_edges: up_389ds init_389ds deps_podman csr_pod verify_csr csr_pod_multi verify_csr_multi

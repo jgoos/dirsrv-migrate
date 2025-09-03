@@ -1,0 +1,28 @@
+---
+- name: Generate & collect CSRs (DNS SANs via dsctl)
+  hosts: ds-s1
+  gather_facts: false
+  vars:
+    dirsrv_csr:
+      instance_discovery: list
+      instances: ["localhost"]
+      force: false
+    dirsrv_csr_sans:
+      dns: ["{{ inventory_hostname }}", "ldap.example.test"]
+      ip: []
+  roles:
+    - role: dirsrv_tls_csr
+
+- name: Generate & collect CSRs (IP SANs via certutil fallback)
+  hosts: ds-c1
+  gather_facts: false
+  vars:
+    dirsrv_csr:
+      instance_discovery: list
+      instances: ["localhost"]
+      force: false
+    dirsrv_csr_sans:
+      dns: ["{{ inventory_hostname }}", "ldap.example.test"]
+      ip: ["10.0.0.11"]
+  roles:
+    - role: dirsrv_tls_csr
