@@ -25,7 +25,8 @@ dirsrv_dse_ldif: "etc/dirsrv/slapd-{{ dirsrv_instance }}/dse.ldif"
 # Backends to process (keyed by backend name)
 dirsrv_backends:
   userroot:
-    suffix: "o=example"
+    # Centralize via group_vars/all/dirsrv.yml; safe fallback for examples
+    suffix: "{{ dirsrv_default_suffix | default('dc=example,dc=com') }}"
 
 # Local artifact staging (controller)
 dirsrv_artifact_root: "{{ playbook_dir }}/.ansible/artifacts"
