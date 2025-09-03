@@ -1,0 +1,32 @@
+---
+# Generate and collect TLS CSRs for RHDS/389-DS instances across production hosts.
+# Adjust `hosts:` to your production group (e.g., ldap_servers, prod_ldap).
+
+- name: Generate & collect RHDS/389-DS CSRs (production)
+  hosts: ldap_servers
+  become: true
+  gather_facts: true
+
+  # Optional: override defaults here or via group_vars/host_vars
+  # vars:
+  #   dirsrv_csr:
+  #     # Force regeneration even if CSR exists
+  #     force: false
+  #     # Explicit instances list (otherwise auto-discovered)
+  #     instance_discovery: auto   # auto | list
+  #     instances: []
+  #     # Artifact root; reuses repo-wide dirsrv_artifact_root_effective if set
+  #     # artifacts_root: "{{ dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join) }}"
+
+  # SANs must be provided per host (ensure inventory_hostname is included):
+  # host_vars/<host>.yml or inventory.yml
+  # dirsrv_csr_sans:
+  #   dns:
+  #     - "{{ inventory_hostname }}"
+  #     - ldap.example.com
+  #   ip: []     # optional — triggers certutil fallback when present
+
+  roles:
+    - role: dirsrv_tls_csr
+      tags: [tls, csr]
+
