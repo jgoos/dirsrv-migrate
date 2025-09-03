@@ -79,7 +79,7 @@
 
     - name: Build expected LDIF artifact list (controller)
       ansible.builtin.set_fact:
-        dirsrv_expected_ldifs: "{{ dirsrv_expected_ldifs + [ dirsrv_artifact_root_effective ~ '/' ~ dirsrv_source_host ~ '/migration-' ~ item ~ '.ldif' ] }}"
+        dirsrv_expected_ldifs: "{{ dirsrv_expected_ldifs + [ dirsrv_artifact_root_effective ~ '/' ~ dirsrv_source_host ~ '/migration-' ~ item ~ '.cleaned.ldif' ] }}"
       loop: "{{ dirsrv_backends.keys() | list }}"
       connection: local
       delegate_to: localhost

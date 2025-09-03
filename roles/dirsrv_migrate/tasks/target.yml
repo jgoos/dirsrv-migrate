@@ -21,12 +21,12 @@
 
 - name: Copy LDIF dump(s) to target node
   ansible.builtin.copy:
-    dest: "{{ [dirsrv_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+    dest: "{{ [dirsrv_base_varldif, 'migration-' ~ item ~ '.cleaned.ldif'] | path_join }}"
     group: dirsrv
     mode: '0640'
     owner: dirsrv
     setype: "{{ (ansible_selinux is defined and ansible_selinux.status != 'disabled') | ternary('dirsrv_var_lib_t', omit) }}"
-    src: "{{ [dirsrv_artifact_root_effective, dirsrv_source_host, 'migration-' ~ item ~ '.ldif'] | path_join }}"
+    src: "{{ [dirsrv_artifact_root_effective, dirsrv_source_host, 'migration-' ~ item ~ '.cleaned.ldif'] | path_join }}"
   loop: "{{ dirsrv_backends.keys() | list }}"
   tags: [artifacts]
   when: not ansible_check_mode
@@ -45,7 +45,7 @@
 
 - name: Build list of target LDIF file paths
   ansible.builtin.set_fact:
-    dirsrv_ldif_files: "{{ dirsrv_backends.keys() | list | map('regex_replace', '^(.*)$', ([dirsrv_base_varldif, 'migration-' ~ '\\1' ~ '.ldif'] | path_join)) | list }}"
+    dirsrv_ldif_files: "{{ dirsrv_backends.keys() | list | map('regex_replace', '^(.*)$', ([dirsrv_base_varldif, 'migration-' ~ '\\1' ~ '.cleaned.ldif'] | path_join)) | list }}"
 
 - name: Clean exported data LDIFs with configured patterns
   ansible.builtin.replace:
@@ -79,7 +79,7 @@
   ansible.builtin.command:
     argv: "{{ [ dirsrv_dsconf_bin | default('dsconf'), dirsrv_instance, 'backend', 'import']
               + (dirsrv_dsconf_import_timeout_args | default([]))
-              + ['--suffix', dirsrv_backends[item].suffix, ([dirsrv_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join)] }}"
+              + ['--suffix', dirsrv_backends[item].suffix, ([dirsrv_base_varldif, 'migration-' ~ item ~ '.cleaned.ldif'] | path_join)] }}"
   loop: "{{ dirsrv_backends.keys() | list }}"
   changed_when: false
   when: dirsrv_dsconf_supports_suffix | default(false) and not ansible_check_mode
@@ -89,7 +89,7 @@
   ansible.builtin.command:
     argv: "{{ [ dirsrv_dsconf_bin | default('dsconf'), dirsrv_instance, 'backend', 'import']
               + (dirsrv_dsconf_import_timeout_args | default([]))
-              + [ dirsrv_backends[item].suffix, ([dirsrv_base_varldif, 'migration-' ~ item ~ '.ldif'] | path_join) ] }}"
+              + [ dirsrv_backends[item].suffix, ([dirsrv_base_varldif, 'migration-' ~ item ~ '.cleaned.ldif'] | path_join) ] }}"
   loop: "{{ dirsrv_backends.keys() | list }}"
   changed_when: false
   when: not (dirsrv_dsconf_supports_suffix | default(false)) and not ansible_check_mode
