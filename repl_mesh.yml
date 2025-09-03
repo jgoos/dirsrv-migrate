@@ -1,0 +1,45 @@
+---
+# Configure replication: 2 masters (suppliers) and 2 replicas (consumers)
+# Note: Keys under dirsrv_repl_nodes must match your inventory hostnames.
+
+- name: Configure multi-master + dual-consumer replication
+  hosts: all
+  gather_facts: false
+  vars:
+    # Replicated suffix(es). Override as needed.
+    dirsrv_repl_suffixes:
+      - "{{ dirsrv_default_suffix | default('dc=example,dc=com') }}"
+
+    # Nodes participating in replication. Replace keys/hosts to match inventory.
+    # Example inventory hostnames: master1, master2, replica1, replica2
+    dirsrv_repl_nodes:
+      master1: { role: supplier, instance: "{{ dirsrv_instance | default('dir') }}", host: "master1", port: 389, protocol: LDAP }
+      master2: { role: supplier, instance: "{{ dirsrv_instance | default('dir') }}", host: "master2", port: 389, protocol: LDAP }
+      replica1: { role: consumer, instance: "{{ dirsrv_instance | default('dir') }}", host: "replica1", port: 389, protocol: LDAP }
+      replica2: { role: consumer, instance: "{{ dirsrv_instance | default('dir') }}", host: "replica2", port: 389, protocol: LDAP }
+
+    # Unique supplier IDs per suffix for masters (1..65534). Update host keys to match inventory.
+    dirsrv_repl_replica_ids:
+      "{{ dirsrv_repl_suffixes[0] }}":
+        master1: 1
+        master2: 2
+
+    # Agreement bind (SIMPLE) using Directory Manager; store dirsrv_password in Vault.
+    dirsrv_repl_auth:
+      method: SIMPLE
+      bind_dn: "{{ dirsrv_dm_dn | default('cn=Directory Manager') }}"
+      bind_password: "{{ dirsrv_password }}"
+
+    # Agreements: master↔master bi-directional; each master → both replicas
+    dirsrv_repl_agreements:
+      "{{ dirsrv_repl_suffixes[0] }}":
+        - { from: "master1", to: "master2", name: "m1-to-m2", init: true }
+        - { from: "master2", to: "master1", name: "m2-to-m1", init: false }
+        - { from: "master1", to: "replica1", name: "m1-to-r1", init: true }
+        - { from: "master2", to: "replica1", name: "m2-to-r1", init: false }
+        - { from: "master1", to: "replica2", name: "m1-to-r2", init: true }
+        - { from: "master2", to: "replica2", name: "m2-to-r2", init: false }
+
+  roles:
+    - role: dirsrv_repl
+
