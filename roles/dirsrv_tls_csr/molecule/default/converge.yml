@@ -1,0 +1,62 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+  become: true
+
+  vars:
+    # Create a fake instance for testing and precreate CSR so role skips generation
+    dirsrv_csr:
+      instance_discovery: list
+      instances: ["test"]
+      artifacts_root: "{{ playbook_dir }}/../../../../.ansible/artifacts"
+      force: false
+    dirsrv_csr_sans:
+      dns: ["{{ inventory_hostname }}", "ldap.example.test"]
+      ip: []
+
+  pre_tasks:
+    - name: Prepare fake instance directory
+      ansible.builtin.file:
+        path: /etc/dirsrv/slapd-test
+        state: directory
+        owner: dirsrv
+        group: dirsrv
+        mode: "0750"
+
+    - name: Create fake pin.txt for NSS
+      ansible.builtin.copy:
+        dest: /etc/dirsrv/slapd-test/pin.txt
+        content: "password\n"
+        owner: dirsrv
+        group: dirsrv
+        mode: "0640"
+
+    - name: Create pre-existing CSR to exercise idempotence
+      ansible.builtin.copy:
+        dest: /etc/dirsrv/slapd-test/Server-Cert.csr
+        content: "-----BEGIN CERTIFICATE REQUEST-----\nFAKE\n-----END CERTIFICATE REQUEST-----\n"
+        owner: dirsrv
+        group: dirsrv
+        mode: "0640"
+
+    - name: Stub dsctl for preflight
+      ansible.builtin.copy:
+        dest: /usr/sbin/dsctl
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          if [ "$1" = "-l" ]; then
+            echo test
+            exit 0
+          fi
+          # help probe
+          if [ "$3" = "generate-server-cert-csr" ] && [ "$4" = "--help" ]; then
+            echo "generate-server-cert-csr help"
+            exit 0
+          fi
+          exit 0
+
+  roles:
+    - role: dirsrv_tls_csr
+

@@ -1,0 +1,28 @@
+---
+# Canonical variables for CSR generation and collection
+
+dirsrv_csr:
+  subject_defaults:
+    C: PT
+    ST: Lisboa
+    L: Lisbon
+    O: "Your Company LDA"
+    OU: "IAM Directories"
+    emailAddress: ops@example.com
+
+  # certutil-only knobs
+  key_type: rsa            # rsa|ecdsa
+  key_size: 4096
+  ecdsa_curve: prime256v1
+  sig_algo: SHA256
+
+  # Instance discovery
+  instance_discovery: auto # auto|list
+  instances: []            # if list
+
+  # Prefer repo-wide artifact root when available
+  artifacts_root: "{{ dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join) }}"
+
+  # Force regeneration even if CSR exists
+  force: false
+

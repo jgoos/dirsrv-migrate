@@ -1,0 +1,27 @@
+---
+- name: Build destination CSR filename map (controller)
+  ansible.builtin.set_fact:
+    dirsrv_csr_local_paths: "{{ (dirsrv_csr_local_paths | default([])) + [ { 'instance': item.instance, 'src': item.csr_path, 'dest': ([dirsrv_csr_artifacts_root_effective, 'tls', inventory_hostname, inventory_hostname ~ '-' ~ item.instance ~ '.csr'] | path_join) } ] }}"
+  loop: "{{ dirsrv_csr_results | default([]) }}"
+  connection: local
+  delegate_to: localhost
+  become: false
+  tags: [artifacts, tls, csr]
+
+- name: Fetch CSR files to controller
+  ansible.builtin.fetch:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    flat: true
+  loop: "{{ dirsrv_csr_local_paths | default([]) }}"
+  tags: [artifacts, tls, csr]
+
+- name: Write manifest on controller
+  ansible.builtin.copy:
+    content: "{{ dirsrv_csr_results | default([]) | to_nice_yaml }}"
+    dest: "{{ [dirsrv_csr_artifacts_root_effective, 'tls', inventory_hostname, 'csr-info.yml'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  tags: [artifacts, tls, csr]

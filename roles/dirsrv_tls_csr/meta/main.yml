@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: dirsrv_tls_csr
+  author: Directory Services Team
+  description: Generate and collect RHDS/389-DS CSRs (dsctl preferred; certutil fallback)
+  license: MIT
+  min_ansible_version: "2.12"
+  platforms:
+    - name: EL
+      versions: [8, 9]
+  galaxy_tags: [tls, csr, rhds, 389ds, security]
+dependencies: []
+

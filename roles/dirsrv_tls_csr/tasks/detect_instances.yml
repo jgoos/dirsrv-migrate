@@ -1,0 +1,43 @@
+---
+- name: Detect instances via dsctl -l
+  ansible.builtin.command:
+    argv: ["{{ dirsrv_dsctl_bin }}", "-l"]
+  register: _dsctl_list
+  changed_when: false
+  failed_when: false
+  tags: [preflight, tls, csr]
+
+- name: Build instances from dsctl output
+  ansible.builtin.set_fact:
+    dirsrv_csr_instances_effective: "{{ (_dsctl_list.stdout | default('') | split()) | list }}"
+  when: dirsrv_csr.instance_discovery | default('auto') == 'auto' and (_dsctl_list.rc | default(1)) == 0 and (_dsctl_list.stdout | default('') | length) > 0
+  tags: [preflight, tls, csr]
+
+- name: Fallback instance discovery via /etc/dirsrv/slapd-*
+  ansible.builtin.find:
+    paths: [/etc/dirsrv]
+    file_type: directory
+    patterns: 'slapd-*'
+  register: _slapd_dirs
+  when: dirsrv_csr.instance_discovery | default('auto') == 'auto' and (dirsrv_csr_instances_effective | default([]) | length) == 0
+  tags: [preflight, tls, csr]
+
+- name: Build instances from directory names
+  ansible.builtin.set_fact:
+    dirsrv_csr_instances_effective: "{{ _slapd_dirs.files | map(attribute='path') | map('regex_replace', '^.*/slapd-(.*)$', '\\1') | list }}"
+  when: dirsrv_csr.instance_discovery | default('auto') == 'auto' and (_slapd_dirs.files | default([]) | length) > 0
+  tags: [preflight, tls, csr]
+
+- name: Use provided instances list
+  ansible.builtin.set_fact:
+    dirsrv_csr_instances_effective: "{{ dirsrv_csr.instances | default([]) }}"
+  when: dirsrv_csr.instance_discovery | default('auto') == 'list'
+  tags: [preflight, tls, csr]
+
+- name: Assert instances discovered or provided
+  ansible.builtin.assert:
+    that:
+      - (dirsrv_csr_instances_effective | default([]) | length) > 0
+    fail_msg: "No 389-DS/RHDS instances found. Provide dirsrv_csr.instances or ensure dsctl -l works."
+  tags: [preflight, tls, csr]
+

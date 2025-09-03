@@ -1,0 +1,126 @@
+---
+# yamllint disable rule:line-length
+
+- name: Preflight | Discover dsctl and certutil
+  ansible.builtin.set_fact:
+    dirsrv_dsctl_candidates:
+      - /usr/sbin/dsctl
+      - /sbin/dsctl
+      - dsctl
+    dirsrv_certutil_candidates:
+      - /usr/bin/certutil
+      - /bin/certutil
+      - certutil
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Stat dsctl candidates
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ dirsrv_dsctl_candidates }}"
+  register: _dsctl_stats
+  changed_when: false
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Stat certutil candidates
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ dirsrv_certutil_candidates }}"
+  register: _certutil_stats
+  changed_when: false
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Select tool paths
+  ansible.builtin.set_fact:
+    dirsrv_dsctl_bin: "{{ (_dsctl_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list | first) | default('dsctl') }}"
+    dirsrv_certutil_bin: "{{ (_certutil_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list | first) | default('certutil') }}"
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Build Subject string
+  ansible.builtin.set_fact:
+    dirsrv_csr_subject: >-
+      CN={{ inventory_hostname }}{{ (dirsrv_csr.subject_defaults | default({}) | dict2items | map('join', '=') | list | length) | ternary(',' ~ (dirsrv_csr.subject_defaults | default({}) | dict2items | map('join', '=') | join(',')), '') }}
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Compute effective artifacts root
+  ansible.builtin.set_fact:
+    dirsrv_csr_artifacts_root_effective: >-
+      {{ dirsrv_csr.artifacts_root | default(dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join)) }}
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Gather SANs and validate DNS includes CN
+  ansible.builtin.set_fact:
+    dirsrv_csr_dns_sans: "{{ (dirsrv_csr_sans.dns | default([inventory_hostname])) | unique }}"
+    dirsrv_csr_ip_sans: "{{ dirsrv_csr_sans.ip | default([]) | unique }}"
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Warn if CN not present in DNS SANs
+  ansible.builtin.debug:
+    msg: "CN ({{ inventory_hostname }}) is not present in DNS SANs: {{ dirsrv_csr_dns_sans }}"
+    warn: true
+  when: inventory_hostname not in dirsrv_csr_dns_sans
+  tags: [preflight, tls, csr]
+
+- name: Preflight | Assert dsctl present (for RHDS tooling)
+  ansible.builtin.assert:
+    that:
+      - (_dsctl_stats.results | selectattr('stat.exists', 'equalto', true) | list | length) > 0
+    fail_msg: "dsctl not found. Ensure 389-DS tools (389-ds-base) are installed."
+  tags: [preflight, tls, csr]
+
+- name: Include | Detect instances (auto or list)
+  ansible.builtin.include_tasks:
+    file: detect_instances.yml
+  tags: [tls, csr]
+
+- name: Compute per-instance facts
+  ansible.builtin.set_fact:
+    dirsrv_csr_instance_items: "{{ dirsrv_csr_instances_effective | default([]) }}"
+  tags: [tls, csr]
+
+- name: Ensure local artifact directories exist (controller)
+  ansible.builtin.file:
+    path: "{{ [dirsrv_csr_artifacts_root_effective, 'tls', inventory_hostname] | path_join }}"
+    state: directory
+    mode: "0750"
+  connection: local
+  delegate_to: localhost
+  become: false
+  tags: [artifacts, tls, csr]
+
+- name: Initialize manifest list (controller)
+  ansible.builtin.set_fact:
+    dirsrv_csr_manifest_entries: []
+  connection: local
+  delegate_to: localhost
+  become: false
+  tags: [artifacts, tls, csr]
+
+- name: Initialize per-instance results (remote)
+  ansible.builtin.set_fact:
+    dirsrv_csr_results: []
+  tags: [tls, csr]
+
+- name: CSR | Process instances
+  ansible.builtin.include_tasks:
+    file: generate_with_dsctl.yml
+  loop: "{{ dirsrv_csr_instance_items }}"
+  loop_control:
+    loop_var: dirsrv_csr_instance
+  when:
+    - (dirsrv_csr_ip_sans | length) == 0
+  tags: [tls, csr]
+
+- name: CSR | Process instances (certutil fallback)
+  ansible.builtin.include_tasks:
+    file: generate_with_certutil.yml
+  loop: "{{ dirsrv_csr_instance_items }}"
+  loop_control:
+    loop_var: dirsrv_csr_instance
+  when:
+    - (dirsrv_csr_ip_sans | length) > 0
+  tags: [tls, csr]
+
+- name: Fetch | Collect CSR(s) and manifest to controller
+  ansible.builtin.include_tasks:
+    file: fetch.yml
+  tags: [artifacts, tls, csr]

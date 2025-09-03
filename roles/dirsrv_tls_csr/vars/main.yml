@@ -1,0 +1,5 @@
+---
+# Constants (keep minimal)
+
+dirsrv_csr_server_cert_filename: "Server-Cert.csr"
+
