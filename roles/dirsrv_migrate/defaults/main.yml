@@ -76,16 +76,6 @@ dirsrv_manage_source_backends: false
 #   rhds11.example.com: rhds12.example.com
 dirsrv_host_map: {}
 
-# Cleanup patterns for configuration DSE LDIF (multi-line regex allowed)
-# Each item: { name: <id>, regexp: <pattern>, replace: <string default ''> }
-dirsrv_cleanup_patterns_dse:
-  - name: remove_replication_agreements
-    regexp: "(?ms)^dn: cn=replica,.*?(?=^dn: |\\Z)"
-    replace: ""
-
-# Cleanup patterns for exported backend LDIFs (applied on target before import)
-dirsrv_cleanup_patterns_data: []
-
 
 # Historical compatibility for dsctl var name (not used by this role)
 # Kept for parity with older docs; safe to remove in a future major.
