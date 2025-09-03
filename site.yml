@@ -10,6 +10,26 @@
           - dirsrv_host_map | length > 0
         fail_msg: "Define 'dirsrv_host_map' in group_vars with source→target pairs"
 
+    - name: Mapping debug | Build helper sets (controller)
+      ansible.builtin.set_fact:
+        dirsrv_map_missing_sources: "{{ dirsrv_host_map.keys() | difference(groups['dirsrv_source']) }}"
+        dirsrv_map_missing_targets: "{{ dirsrv_host_map.values() | difference(groups['dirsrv_target']) }}"
+        dirsrv_map_unmapped_sources: "{{ groups['dirsrv_source'] | difference(dirsrv_host_map.keys()) }}"
+        dirsrv_map_unreferenced_targets: "{{ groups['dirsrv_target'] | difference(dirsrv_host_map.values()) }}"
+      when: dirsrv_mapping_debug | default(false)
+
+    - name: Mapping debug | Show mapping summary
+      ansible.builtin.debug:
+        msg:
+          sources: "{{ groups['dirsrv_source'] | default([]) }}"
+          targets: "{{ groups['dirsrv_target'] | default([]) }}"
+          map_size: "{{ dirsrv_host_map | length }}"
+          missing_sources_in_group: "{{ dirsrv_map_missing_sources | default([]) }}"
+          missing_targets_in_group: "{{ dirsrv_map_missing_targets | default([]) }}"
+          unmapped_sources: "{{ dirsrv_map_unmapped_sources | default([]) }}"
+          unreferenced_targets: "{{ dirsrv_map_unreferenced_targets | default([]) }}"
+      when: dirsrv_mapping_debug | default(false)
+
     - name: Ensure all sources are mapped and targets exist
       ansible.builtin.assert:
         that:
