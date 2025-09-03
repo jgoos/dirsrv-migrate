@@ -125,7 +125,7 @@
   loop: "{{ dirsrv_local_ldif_files_existing | default([]) }}"
   register: _ldif_pre_counts
   changed_when: false
-  failed_when: false  # allow rc=1 (no matches)
+  failed_when: _ldif_pre_counts.rc > 1  # allow rc=1 (no matches)
   connection: local
   delegate_to: localhost
   become: false
@@ -177,7 +177,7 @@
   loop: "{{ dirsrv_local_ldif_files_cleaned | default([]) }}"
   register: _ldif_clean_counts
   changed_when: false
-  failed_when: false  # allow rc=1 (no matches)
+  failed_when: _ldif_clean_counts.rc > 1  # allow rc=1 (no matches)
   when: not ansible_check_mode
   connection: local
   delegate_to: localhost
