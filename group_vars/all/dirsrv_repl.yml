@@ -1,5 +1,0 @@
----
-# Replication suffixes aligned to the global default
-dirsrv_repl_suffixes:
-  - "{{ dirsrv_default_suffix }}"
-
