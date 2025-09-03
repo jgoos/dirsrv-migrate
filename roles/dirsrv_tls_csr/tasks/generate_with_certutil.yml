@@ -72,7 +72,7 @@
     owner: dirsrv
     group: dirsrv
     mode: "0640"
-  when: ( _csr_stat_pre.stat.exists or (dirsrv_csr.force | default(false)) | bool ) and not ansible_check_mode
+  when: not ansible_check_mode
   tags: [security, tls, csr]
 
 - name: Stat CSR to compute sha256 (certutil)
