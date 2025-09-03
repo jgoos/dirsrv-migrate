@@ -6,7 +6,7 @@ COMPOSE_CMD := $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-
 
 .PHONY: migrate help \
 	up_389ds init_389ds seed_389ds migrate_pod deps_podman test_389ds verify_389ds down_389ds reset_389ds \
-	clean clean_dry
+	clean clean_dry test_ldif_filter
 
 # Default migrate uses Podman connection (no sshpass/SSH required)
 migrate: deps_podman
@@ -17,7 +17,7 @@ migrate: deps_podman
 	  site.yml $(ARGS)
 
 help:
-	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_repl, test_repl_mesh, down_389ds, reset_389ds"
+	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, down_389ds, reset_389ds"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
@@ -70,6 +70,26 @@ deps_podman:
 	ansible-galaxy collection install containers.podman
 
 test_389ds: up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds
+
+# Exercise LDIF split/filter module and verify artifacts on controller
+test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds
+	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	ansible-playbook -i test/inventory.compose.pod.yml \
+	  -e @test/compose_mapping.yml \
+	  -e @test/compose_vars.yml \
+	  --limit dirsrv_source \
+	  site.yml $(ARGS)
+	@set -e; \
+	ART_DIR=".ansible/artifacts/compose-dev/ds-s1"; \
+	CLEAN="$$ART_DIR/migration-userroot.cleaned.ldif"; \
+	REM="$$ART_DIR/migration-userroot.removed.ldif.gz"; \
+	ORIGGZ="$$ART_DIR/migration-userroot.ldif.gz"; \
+	[ -f "$$CLEAN" ] || { echo "Missing cleaned LDIF: $$CLEAN" >&2; exit 1; }; \
+	[ -f "$$REM" ] || { echo "Missing removed LDIF gz: $$REM" >&2; exit 1; }; \
+	[ -f "$$ORIGGZ" ] || { echo "Missing original LDIF gz: $$ORIGGZ" >&2; exit 1; }; \
+	grep -q "^dn: uid=alice,ou=people,o=example" "$$CLEAN" || { echo "Cleaned LDIF missing expected entry (alice)" >&2; exit 1; }; \
+	! grep -qi "^dn: cn=repl" "$$CLEAN" || { echo "Found replication keep-alive entry in cleaned LDIF" >&2; exit 1; }; \
+	echo "OK: ldif_filter_split produced expected artifacts and content"
 
 # End-to-end replication test (supplier ds-s1 -> consumer ds-c1)
 test_repl: up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds
