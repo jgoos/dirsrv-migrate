@@ -1,0 +1,6 @@
+---
+# Backends configured for migration/import/export
+dirsrv_backends:
+  userroot:
+    suffix: "{{ dirsrv_default_suffix }}"
+

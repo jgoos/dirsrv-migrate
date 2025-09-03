@@ -1,0 +1,4 @@
+---
+# Central default suffix for directory data (override per environment if needed)
+dirsrv_default_suffix: "dc=corp,dc=example,dc=com"
+
