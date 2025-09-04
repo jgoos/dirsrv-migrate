@@ -62,7 +62,7 @@
   when:
     - dirsrv_manage_source_backends | bool
     - not ansible_check_mode
-    - dirsrv_backends[item].suffix not in _source_backends.stdout.splitlines()
+    - dirsrv_backends[item].suffix not in (_source_backends.stdout.splitlines() if _source_backends is defined else [])
 
 - name: Export via dsconf using --suffix (preferred)
   ansible.builtin.command:
