@@ -5,6 +5,7 @@
 - name: Configure multi-master + dual-consumer replication
   hosts: all
   gather_facts: false
+  become: true
   vars:
     # Replicated suffix(es). Override as needed.
     dirsrv_repl_suffixes:

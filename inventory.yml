@@ -4,8 +4,8 @@ all:
     dirsrv_source:
       hosts:
         rhds11.example.com:
-          ansible_user: root
+          ansible_user: ansible
     dirsrv_target:
       hosts:
         rhds12.example.com:
-          ansible_user: root
+          ansible_user: ansible
