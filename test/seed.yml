@@ -37,13 +37,24 @@
       until: ldapi_ready.rc == 0
 
     - name: Ensure suffix mapping tree exists
-      ansible.builtin.shell: >-
-        dsconf {{ instance }} backend get-tree | grep -q '^{{ suffix }}$' \
-        || dsconf {{ instance }} backend create --suffix '{{ suffix }}' --be-name userRoot
-      args:
-        executable: /bin/sh
-      changed_when: false
-      failed_when: false
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ instance }}"
+          - backend
+          - create
+          - --suffix
+          - "{{ suffix }}"
+          - --be-name
+          - userRoot
+      register: _test_seed_suffix_create
+      changed_when: _test_seed_suffix_create.rc == 0
+      failed_when: >-
+        _test_seed_suffix_create.rc != 0 and
+        'already exists' not in ((
+          (_test_seed_suffix_create.stdout | lower | default('')) + ' ' +
+          (_test_seed_suffix_create.stderr | lower | default(''))
+        ))
 
     - name: Seed example LDIF (idempotent, retries)
       ansible.builtin.shell: |

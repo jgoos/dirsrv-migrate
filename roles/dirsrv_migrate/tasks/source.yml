@@ -34,14 +34,25 @@
     group: dirsrv
 
 - name: Ensure source backends exist
-  ansible.builtin.shell: >-
-    dsconf {{ dirsrv_instance }} backend get-tree | grep -q '^{{ dirsrv_backends[item].suffix }}$' ||
-    dsconf {{ dirsrv_instance }} backend create --suffix '{{ dirsrv_backends[item].suffix }}' --be-name '{{ item }}' || true
-  args:
-    executable: /bin/sh
+  ansible.builtin.command:
+    argv:
+      - "{{ dirsrv_dsconf_bin | default('dsconf') }}"
+      - "{{ dirsrv_instance }}"
+      - backend
+      - create
+      - --suffix
+      - "{{ dirsrv_backends[item].suffix }}"
+      - --be-name
+      - "{{ item }}"
+  register: _dirsrv_source_backend_create
   loop: "{{ dirsrv_backends.keys() | list }}"
-  changed_when: false
-  failed_when: false
+  changed_when: _dirsrv_source_backend_create.rc == 0
+  failed_when: >-
+    _dirsrv_source_backend_create.rc != 0 and
+    'already exists' not in ((
+      (_dirsrv_source_backend_create.stdout | lower | default('')) + ' ' +
+      (_dirsrv_source_backend_create.stderr | lower | default(''))
+    ))
   when: dirsrv_manage_source_backends | bool and not ansible_check_mode
 
 - name: Export via dsconf using --suffix (preferred)
