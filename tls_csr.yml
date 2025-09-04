@@ -29,4 +29,3 @@
   roles:
     - role: dirsrv_tls_csr
       tags: [tls, csr]
-

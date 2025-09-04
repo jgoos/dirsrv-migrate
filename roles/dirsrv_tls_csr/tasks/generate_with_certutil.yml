@@ -20,16 +20,26 @@
 
 - name: Locate NSS DB password file (pin.txt or pwdfile.txt)
   block:
-    - ansible.builtin.stat:
+    - name: Stat NSS pin.txt
+      ansible.builtin.stat:
         path: "{{ [dirsrv_csr_nssdb_dir, 'pin.txt'] | path_join }}"
       register: _pin_stat
-    - ansible.builtin.stat:
+    - name: Stat NSS pwdfile.txt
+      ansible.builtin.stat:
         path: "{{ [dirsrv_csr_nssdb_dir, 'pwdfile.txt'] | path_join }}"
       register: _pwd_stat
-    - ansible.builtin.set_fact:
+    - name: Choose NSS password file path
+      ansible.builtin.set_fact:
         dirsrv_csr_pwdfile: >-
-          {{ (_pin_stat.stat.exists | default(false)) | ternary(_pin_stat.stat.path, (_pwd_stat.stat.exists | default(false)) | ternary(_pwd_stat.stat.path, '')) }}
-    - ansible.builtin.assert:
+          {{ (_pin_stat.stat.exists | default(false))
+              | ternary(
+                  _pin_stat.stat.path,
+                  (_pwd_stat.stat.exists | default(false))
+                    | ternary(_pwd_stat.stat.path, '')
+                )
+          }}
+    - name: Assert NSS password file exists
+      ansible.builtin.assert:
         that:
           - dirsrv_csr_pwdfile | length > 0
         fail_msg: "pin.txt/pwdfile.txt not found in {{ dirsrv_csr_nssdb_dir }}; required for NSS DB access."
@@ -57,7 +67,15 @@
 
 - name: Generate CSR with certutil
   ansible.builtin.command:
-    argv: "{{ [ dirsrv_certutil_bin, '-R', '-d', ('sql:' ~ dirsrv_csr_nssdb_dir), '-f', dirsrv_csr_pwdfile, '-s', dirsrv_csr_subject, '--extSAN', dirsrv_csr_extsan, '-Z', (dirsrv_csr.sig_algo | default('SHA256')), '-a', '-o', dirsrv_csr_csr_path ] + (dirsrv_csr_certutil_key_args | default([])) }}"
+    argv: "{{ [
+      dirsrv_certutil_bin, '-R',
+      '-d', ('sql:' ~ dirsrv_csr_nssdb_dir),
+      '-f', dirsrv_csr_pwdfile,
+      '-s', dirsrv_csr_subject,
+      '--extSAN', dirsrv_csr_extsan,
+      '-Z', (dirsrv_csr.sig_algo | default('SHA256')),
+      '-a', '-o', dirsrv_csr_csr_path
+    ] + (dirsrv_csr_certutil_key_args | default([])) }}"
   register: _certutil_gen
   changed_when: true
   failed_when: _certutil_gen.rc != 0
