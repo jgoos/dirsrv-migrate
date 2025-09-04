@@ -1,11 +1,10 @@
 ---
 - name: Preflight | Ensure dsconf/dsctl available
-  ansible.builtin.shell: "command -v {{ item }}"
-  args:
-    executable: /bin/sh
-  register: dirsrv_repl_tools
+  ansible.builtin.command:
+    argv: ["which", "{{ item }}"]
+  register: _dirsrv_repl_tool_check
   changed_when: false
-  failed_when: dirsrv_repl_tools.rc != 0
+  failed_when: _dirsrv_repl_tool_check.rc != 0
   loop:
     - dsconf
     - dsctl
