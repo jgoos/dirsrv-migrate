@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 from ansible.module_utils.basic import AnsibleModule
-import os, re, io, base64, gzip
+import os, re, io, base64, gzip, subprocess
 
 
 def unfold(lines):
@@ -156,13 +156,13 @@ def run_module():
         if p["compress_orig"] and not module.check_mode:
             if not src.endswith(".gz"):
                 # gzip -f is safe; this overwrites any pre-existing .gz
-                os.system(f"gzip -f {src}")
+                subprocess.run(["gzip", "-f", src], check=True)
                 orig_gz = src + ".gz"
             else:
                 orig_gz = src
 
         module.exit_json(
-            changed=True,
+            changed=not module.check_mode and bool(kept or removed),
             kept=kept,
             removed=removed,
             clean=clean_path,
