@@ -30,10 +30,22 @@
   changed_when: dirsrv_repl_suffix_ensure.rc == 0
   failed_when: >-
     dirsrv_repl_suffix_ensure.rc != 0 and
-    'already exists' not in ((
-      (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
-      (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
-    ))
+    (
+      'already exists' not in (
+        (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
+        (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
+      )
+    ) and (
+      'mapping tree' not in (
+        (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
+        (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
+      )
+    ) and (
+      'exists' not in (
+        (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
+        (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
+      )
+    )
   loop: "{{ dirsrv_repl_suffixes }}"
 
 - name: Enable | Assert replica-id present for suppliers/hubs
@@ -75,3 +87,132 @@
     label: "{{ item }} -> role={{ repl_role }}"
   when:
     - dirsrv_repl_suffixes | length > 0
+
+# Lab-only: remove consumer suffix-level referrals that can mask empty local state
+- name: Enable | Get replication config (may include referrals) per suffix
+  vars:
+    suffix: "{{ item }}"
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    -j replication get --suffix "{{ suffix }}"
+  register: dirsrv_repl_repl_get
+  changed_when: false
+  failed_when: false
+  no_log: true
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - dirsrv_repl_this_node.role == 'consumer'
+    - rhds_disable_referrals | default(true)
+
+- name: Enable | Build referral removal matrix
+  vars:
+    _suffix: "{{ item.item }}"
+    _urls: >-
+      {{ (
+            (
+              ((item.stdout | length > 0) and (item.stdout is search('^{')))
+            ) | ternary(
+              ((item.stdout | from_json).replication.refs | default([])),
+              []
+            )
+          )
+          +
+          (item.stdout | regex_findall('Referral\\s*:\\s*(\\S+)'))
+          | unique
+      }}
+  ansible.builtin.set_fact:
+    dirsrv_repl_refs_matrix: >-
+      {{ (dirsrv_repl_refs_matrix | default([])) + [ { 'suffix': _suffix, 'refs': _urls } ] }}
+  loop: "{{ dirsrv_repl_repl_get.results | default([]) }}"
+  when:
+    - dirsrv_repl_this_node.role == 'consumer'
+    - rhds_disable_referrals | default(true)
+
+- name: Enable | Remove consumer referrals (lab only)
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication set --suffix "{{ item.0.suffix }}" --repl-del-ref {{ item.1 }}
+  register: dirsrv_repl_del_ref
+  changed_when: dirsrv_repl_del_ref.rc == 0
+  failed_when: false
+  no_log: true
+  with_subelements:
+    - "{{ dirsrv_repl_refs_matrix | default([]) }}"
+    - refs
+  when:
+    - dirsrv_repl_this_node.role == 'consumer'
+    - rhds_disable_referrals | default(true)
+
+- name: Enable | Force mapping-tree state to backend (lab only)
+  ansible.builtin.shell: |
+    cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
+    dn: cn={{ item | regex_replace('=','\\3D') }},cn=mapping tree,cn=config
+    changetype: modify
+    replace: nsslapd-state
+    nsslapd-state: backend
+    LDIF
+  args:
+    executable: /bin/sh
+  register: dirsrv_repl_mapstate_backend
+  changed_when: dirsrv_repl_mapstate_backend.rc == 0
+  failed_when: false
+  no_log: true
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - rhds_disable_referrals | default(true)
+    - dirsrv_ldapi_uri | default('') | length > 0
+
+- name: Enable | Remove mapping-tree referral (lab only)
+  ansible.builtin.shell: |
+    cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
+    dn: cn={{ item | regex_replace('=','\\3D') }},cn=mapping tree,cn=config
+    changetype: modify
+    delete: nsslapd-referral
+    LDIF
+  args:
+    executable: /bin/sh
+  register: dirsrv_repl_mapref_del
+  changed_when: dirsrv_repl_mapref_del.rc == 0
+  failed_when: false
+  no_log: true
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - rhds_disable_referrals | default(true)
+    - dirsrv_ldapi_uri | default('') | length > 0
+
+- name: Enable | Ensure replication manager exists (SIMPLE)
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication create-manager --name "replication manager" --passwd "{{ dirsrv_repl_auth.bind_password }}"
+  register: dirsrv_repl_create_mgr
+  changed_when: >-
+    dirsrv_repl_create_mgr.rc == 0 and (
+      'Successfully created replication manager' in (dirsrv_repl_create_mgr.stdout | default(''))
+    )
+  failed_when: >-
+    dirsrv_repl_create_mgr.rc != 0 and (
+      'already exists' not in ((dirsrv_repl_create_mgr.stdout | lower | default('')) + ' ' + (dirsrv_repl_create_mgr.stderr | lower | default('')))
+    )
+  when:
+    - dirsrv_repl_auth.method == 'SIMPLE'
+    - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
+
+- name: Enable | Authorize inbound supplier bind DN(s) on this node
+  vars:
+    suffix: "{{ item.0.key }}"
+    agree: "{{ item.1 }}"
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication set --suffix "{{ suffix }}" --repl-add-bind-dn "{{ dirsrv_repl_auth.bind_dn }}"
+  register: dirsrv_repl_add_binddn
+  changed_when: >-
+    dirsrv_repl_add_binddn.rc == 0 and (
+      'Successfully updated replication configuration' in (dirsrv_repl_add_binddn.stdout | default(''))
+    )
+  failed_when: false
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - dirsrv_repl_auth.method == 'SIMPLE'
+    - agree.to == inventory_hostname

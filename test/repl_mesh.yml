@@ -20,6 +20,70 @@
       sn: Mesh
       uid: replica-mesh-test
   tasks:
+    - name: Wait until s2->c2 agreement is initialized
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - "{{ ldapi_uri }}"
+          - repl-agmt
+          - init-status
+          - --suffix
+          - o=example
+          - s2-to-c2
+      register: s2c2_init
+      changed_when: false
+      failed_when: s2c2_init.rc != 0
+      until: (s2c2_init.stdout | lower | default('')) is search('successfully initialized')
+      retries: 60
+      delay: 3
+
+    - name: Wait until s1->c1 agreement is initialized (delegate to ds-s1)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - "{{ ldapi_uri }}"
+          - repl-agmt
+          - init-status
+          - --suffix
+          - o=example
+          - s1-to-c1
+      register: s1c1_init
+      changed_when: false
+      failed_when: s1c1_init.rc != 0
+      until: (s1c1_init.stdout | lower | default('')) is search('successfully initialized')
+      retries: 60
+      delay: 3
+      delegate_to: ds-s1
+
+    - name: Wait until s2->s1 agreement is initialized
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - "{{ ldapi_uri }}"
+          - repl-agmt
+          - init-status
+          - --suffix
+          - o=example
+          - s2-to-s1
+      register: s2s1_init
+      changed_when: false
+      failed_when: s2s1_init.rc != 0
+      until: (s2s1_init.stdout | lower | default('')) is search('successfully initialized')
+      retries: 60
+      delay: 3
+
     - name: Ensure test entry present on supplier ds-s2
       ansible.builtin.shell: |
         ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}" <<'EOF'
@@ -30,6 +94,87 @@
       changed_when: true
       failed_when: false
 
+    - name: Verify test entry exists on ds-s2
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -Y
+          - EXTERNAL
+          - -H
+          - "{{ ldapi_uri }}"
+          - -b
+          - "{{ test_dn }}"
+          - -s
+          - base
+          - objectClass=*
+      register: ensure_added
+      changed_when: false
+      failed_when: ensure_added.rc != 0
+
+    - name: Nudge replication s2->s1 after add
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - "{{ ldapi_uri }}"
+          - repl-agmt
+          - poke
+          - --suffix
+          - o=example
+          - s2-to-s1
+      register: poke_s2_s1
+      changed_when: false
+      until: poke_s2_s1.rc == 0
+      retries: 120
+      delay: 3
+
+    - name: Nudge replication s2->c2 after add
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - "{{ ldapi_uri }}"
+          - repl-agmt
+          - poke
+          - --suffix
+          - o=example
+          - s2-to-c2
+      register: poke_s2_c2
+      changed_when: false
+      until: poke_s2_c2.rc == 0
+      retries: 120
+      delay: 3
+
+    - name: Nudge replication s1->c1 after add (delegate to ds-s1)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - "{{ ldapi_uri }}"
+          - repl-agmt
+          - poke
+          - --suffix
+          - o=example
+          - s1-to-c1
+      register: poke_s1_c1
+      changed_when: false
+      until: poke_s1_c1.rc == 0
+      retries: 120
+      delay: 3
+      delegate_to: ds-s1
+
+    - name: Wait for s2 outbound agreements healthy after write
+      ansible.builtin.import_tasks: ../roles/dirsrv_repl/tasks/wait_green.yml
+
 - name: "Verify replication reached consumer ds-c1 (via ds-s1) and ds-c2 + supplier ds-s1"
   hosts: ds-s1,ds-c1,ds-c2
   gather_facts: false
@@ -37,6 +182,10 @@
     ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
     test_dn: "uid=replica-mesh-test,o=example"
   tasks:
+    - name: Wait for agreements healthy on ds-s1 before verify
+      when: inventory_hostname == 'ds-s1'
+      ansible.builtin.import_tasks: ../roles/dirsrv_repl/tasks/wait_green.yml
+
     - name: Wait for replicated entry to appear
       ansible.builtin.command:
         argv:
@@ -52,6 +201,6 @@
           - objectClass=*
       register: search
       changed_when: false
-      retries: 60
-      delay: 2
+      retries: 120
+      delay: 3
       until: search.rc == 0

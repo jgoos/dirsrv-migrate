@@ -1,0 +1,40 @@
+---
+# Expects vars: retry_suffix, retry_agmt
+
+- name: Retry | Check init-status for retry (online mode)
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt init-status --suffix "{{ retry_suffix }}" {{ retry_agmt }}
+  register: _repl_init_status_retry
+  changed_when: false
+  failed_when: false
+
+- name: Retry | Backoff before retrying init (transient)
+  ansible.builtin.pause:
+    seconds: "{{ rhds_repl_retry_backoff | default(10) }}"
+  when: (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+
+- name: Retry | Re-run online init once on transient errors
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt init --suffix "{{ retry_suffix }}" {{ retry_agmt }}
+  register: _repl_agmt_reinit
+  changed_when: _repl_agmt_reinit.rc == 0
+  failed_when: false
+  when: (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+
+- name: Retry | Poll init-status after retry (online mode)
+  vars:
+    max_tries: 30
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt init-status --suffix "{{ retry_suffix }}" {{ retry_agmt }}
+  register: _repl_init_status_retry_poll
+  changed_when: false
+  failed_when: _repl_init_status_retry_poll.rc != 0
+  until: >-
+    (_repl_init_status_retry_poll.stdout | lower | default('')) is search('successfully initialized')
+  retries: "{{ max_tries }}"
+  delay: 5
+  when: _repl_agmt_reinit is defined and _repl_agmt_reinit.rc == 0
+

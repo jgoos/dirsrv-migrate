@@ -1,13 +1,37 @@
 ---
 - name: Preflight | Ensure dsconf/dsctl available
-  ansible.builtin.command:
-    argv: ["which", "{{ item }}"]
-  register: _dirsrv_repl_tool_check
-  changed_when: false
-  failed_when: _dirsrv_repl_tool_check.rc != 0
-  loop:
-    - dsconf
-    - dsctl
+  block:
+    - name: Preflight | Stat dsconf candidates
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: dirsrv_repl_dsconf_stats
+      loop:
+        - /usr/sbin/dsconf
+        - /sbin/dsconf
+        - dsconf
+      changed_when: false
+
+    - name: Preflight | Assert dsconf present
+      ansible.builtin.assert:
+        that:
+          - (dirsrv_repl_dsconf_stats.results | selectattr('stat.exists','equalto', true) | list | length) > 0
+        fail_msg: "dsconf not found in PATH or standard locations"
+
+    - name: Preflight | Stat dsctl candidates
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: dirsrv_repl_dsctl_stats
+      loop:
+        - /usr/sbin/dsctl
+        - /sbin/dsctl
+        - dsctl
+      changed_when: false
+
+    - name: Preflight | Assert dsctl present
+      ansible.builtin.assert:
+        that:
+          - (dirsrv_repl_dsctl_stats.results | selectattr('stat.exists','equalto', true) | list | length) > 0
+        fail_msg: "dsctl not found in PATH or standard locations"
 
 - name: Preflight | Service facts for time sync check
   ansible.builtin.service_facts:
@@ -93,6 +117,9 @@
 
 - name: Include tuning tasks
   ansible.builtin.include_tasks: tuning.yml
+
+- name: Wait for agreements healthy
+  ansible.builtin.include_tasks: wait_green.yml
 
 - name: Include monitor tasks
   ansible.builtin.include_tasks: monitor.yml
