@@ -37,7 +37,12 @@
       ansible.builtin.command: which ds-replcheck
       register: rhds_replcheck_which
       changed_when: false
-      failed_when: false
+      ignore_errors: true
+
+    - name: Monitor | Warn when ds-replcheck is unavailable
+      ansible.builtin.debug:
+        msg: ds-replcheck not installed; skipping replication check.
+      when: rhds_replcheck_which.rc != 0
 
     - name: Monitor | Run ds-replcheck in requested mode
       ansible.builtin.command: >-
@@ -50,10 +55,20 @@
         {% endif %}
       register: rhds_replcheck_run
       changed_when: false
-      failed_when: false
+      failed_when: rhds_replcheck_run.rc != 0
+      ignore_errors: true
       when: rhds_replcheck_which.rc == 0
 
     - name: Monitor | Show replcheck output
       ansible.builtin.debug:
         var: rhds_replcheck_run.stdout
-      when: rhds_replcheck_run is defined
+      when:
+        - rhds_replcheck_run is defined
+        - rhds_replcheck_run.rc == 0
+
+    - name: Monitor | Warn when ds-replcheck run fails
+      ansible.builtin.debug:
+        msg: "ds-replcheck failed: {{ rhds_replcheck_run.stderr }}"
+      when:
+        - rhds_replcheck_run is defined
+        - rhds_replcheck_run.rc != 0
