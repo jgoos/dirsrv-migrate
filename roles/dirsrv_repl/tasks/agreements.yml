@@ -139,7 +139,7 @@
     repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
   register: dirsrv_repl_init_status
   changed_when: false
-  failed_when: false
+  failed_when: dirsrv_repl_init_status.rc != 0
   until: >-
     (dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized')
   retries: "{{ max_tries }}"
