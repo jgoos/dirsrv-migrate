@@ -33,16 +33,32 @@
     owner: dirsrv
     group: dirsrv
 
-- name: Ensure source backends exist
-  ansible.builtin.shell: >-
-    dsconf {{ dirsrv_instance }} backend get-tree | grep -q '^{{ dirsrv_backends[item].suffix }}$' ||
-    dsconf {{ dirsrv_instance }} backend create --suffix '{{ dirsrv_backends[item].suffix }}' --be-name '{{ item }}' || true
-  args:
-    executable: /bin/sh
-  loop: "{{ dirsrv_backends.keys() | list }}"
+- name: Gather existing backend suffixes
+  ansible.builtin.command:
+    argv: [ "{{ dirsrv_dsconf_bin | default('dsconf') }}", "{{ dirsrv_instance }}", "backend", "get-tree" ]
+  register: _dirsrv_existing_backends
   changed_when: false
-  failed_when: false
   when: dirsrv_manage_source_backends | bool and not ansible_check_mode
+
+- name: Ensure source backends exist
+  ansible.builtin.command:
+    argv:
+      - "{{ dirsrv_dsconf_bin | default('dsconf') }}"
+      - "{{ dirsrv_instance }}"
+      - backend
+      - create
+      - "--suffix"
+      - "{{ dirsrv_backends[item].suffix }}"
+      - "--be-name"
+      - "{{ item }}"
+  loop: "{{ dirsrv_backends.keys() | list }}"
+  when:
+    - dirsrv_manage_source_backends | bool
+    - not ansible_check_mode
+    - dirsrv_backends[item].suffix not in _dirsrv_existing_backends.stdout_lines
+  register: _dirsrv_backend_create
+  changed_when: _dirsrv_backend_create.rc == 0
+  failed_when: _dirsrv_backend_create.rc != 0
 
 - name: Export via dsconf using --suffix (preferred)
   ansible.builtin.command:
