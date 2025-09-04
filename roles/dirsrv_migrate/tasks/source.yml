@@ -33,7 +33,33 @@
     owner: dirsrv
     group: dirsrv
 
-- name: Ensure source backends exist
+- name: Gather existing source backends
+  ansible.builtin.command:
+    argv:
+      - "{{ dirsrv_dsconf_bin | default('dsconf') }}"
+      - "{{ dirsrv_instance }}"
+      - backend
+      - get-tree
+  register: _dirsrv_source_backend_tree
+  changed_when: false
+  failed_when: _dirsrv_source_backend_tree.rc != 0
+  when: dirsrv_manage_source_backends | bool and not ansible_check_mode
+
+- name: Check source backends
+  ansible.builtin.command:
+    argv:
+      - /bin/grep
+      - -F
+      - "{{ dirsrv_backends[item].suffix }}"
+  args:
+    stdin: "{{ _dirsrv_source_backend_tree.stdout }}"
+  register: _dirsrv_source_backend_grep
+  loop: "{{ dirsrv_backends.keys() | list }}"
+  changed_when: false
+  failed_when: _dirsrv_source_backend_grep.rc not in [0, 1]
+  when: dirsrv_manage_source_backends | bool and not ansible_check_mode
+
+- name: Create missing source backends
   ansible.builtin.command:
     argv:
       - "{{ dirsrv_dsconf_bin | default('dsconf') }}"
@@ -46,14 +72,11 @@
       - "{{ item }}"
   register: _dirsrv_source_backend_create
   loop: "{{ dirsrv_backends.keys() | list }}"
+  loop_control:
+    index_var: idx
   changed_when: _dirsrv_source_backend_create.rc == 0
-  failed_when: >-
-    _dirsrv_source_backend_create.rc != 0 and
-    'already exists' not in ((
-      (_dirsrv_source_backend_create.stdout | lower | default('')) + ' ' +
-      (_dirsrv_source_backend_create.stderr | lower | default(''))
-    ))
-  when: dirsrv_manage_source_backends | bool and not ansible_check_mode
+  failed_when: _dirsrv_source_backend_create.rc != 0
+  when: dirsrv_manage_source_backends | bool and not ansible_check_mode and _dirsrv_source_backend_grep.results[idx].rc == 1
 
 - name: Export via dsconf using --suffix (preferred)
   ansible.builtin.command:
