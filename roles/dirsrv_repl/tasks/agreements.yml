@@ -44,30 +44,27 @@
     suffix: "{{ item.0.key }}"
     agree: "{{ item.1 }}"
     target: "{{ dirsrv_repl_nodes[agree.to] }}"
+    dirsrv_repl_agmt_cmd_base:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - create
+      - --suffix
+      - "{{ suffix }}"
+      - --host
+      - "{{ target.host }}"
+      - --port
+      - "{{ target.port | string }}"
+      - --conn-protocol
+      - "{{ target.protocol }}"
+    dirsrv_repl_agmt_cmd_bind: "{{ ['--bind-dn', dirsrv_repl_auth.bind_dn, '--bind-passwd', dirsrv_repl_auth.bind_password, '--bind-method', 'SIMPLE'] if dirsrv_repl_auth.method == 'SIMPLE' else ['--bind-method', 'SSLCLIENTAUTH'] }}"
+    dirsrv_repl_agmt_cmd_init: "{{ ['--init'] if (agree.init | default(false)) and (dirsrv_repl_init_mode == 'online') else [] }}"
   ansible.builtin.command:
-    argv: "{{ [
-      'dsconf',
-      '-D', dirsrv_dm_dn,
-      '-w', dirsrv_password,
-      dirsrv_repl_conn_url,
-      'repl-agmt', 'create',
-      '--suffix', suffix,
-      '--host', target.host,
-      '--port', target.port | string,
-      '--conn-protocol', target.protocol
-    ]
-      + (
-          ['--bind-dn', dirsrv_repl_auth.bind_dn,
-           '--bind-passwd', dirsrv_repl_auth.bind_password,
-           '--bind-method', 'SIMPLE']
-          if dirsrv_repl_auth.method == 'SIMPLE'
-          else ['--bind-method', 'SSLCLIENTAUTH']
-        )
-      + (['--init']
-          if (agree.init | default(false)) and (dirsrv_repl_init_mode == 'online')
-          else [])
-      + [agree.name]
-    }}"
+    argv: "{{ dirsrv_repl_agmt_cmd_base + dirsrv_repl_agmt_cmd_bind + dirsrv_repl_agmt_cmd_init + [agree.name] }}"
   register: dirsrv_repl_agmt_create
   changed_when: dirsrv_repl_agmt_create.rc == 0
   failed_when: dirsrv_repl_agmt_create.rc != 0
