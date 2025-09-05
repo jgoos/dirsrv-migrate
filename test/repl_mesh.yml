@@ -31,6 +31,21 @@
     supplier_agreement: "{{ 's1-to-s2' if inventory_hostname == 'ds-s1' else 's2-to-s1' }}"
     agmt_dn: "cn={{ supplier_agreement }},cn=replica,{{ suffix_dn }}"
   tasks:
+    - name: Check changelog presence
+      ansible.builtin.command:
+        argv: [ldapsearch, -x, -H, ldap://localhost:3389, -s, base, -b, cn=changelog, 1.1]
+      register: s_cl
+      changed_when: false
+      failed_when: false
+
+    - name: Ensure changelog exists (set-changelog)
+      ansible.builtin.command:
+        argv: [dsconf, -j, -H, ldap://localhost:3389, ldap, -D, "cn=Directory Manager", -w, password, replication, set-changelog, --suffix, o=example, --max-age, 7d]
+      register: s_cl_set
+      changed_when: s_cl_set.rc == 0
+      failed_when: false
+      when: s_cl.rc != 0
+
     - name: Gate suppliers green on {{ supplier_agreement }}
       ansible.builtin.command:
         argv:
