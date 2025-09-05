@@ -73,3 +73,6 @@ dirsrv_repl_require_unique_replica_ids: true
 # Service management (used when offline init or changelog encryption)
 # Uses repo-standard var name already declared elsewhere
 
+# Lab-only features
+rhds_disable_referrals: false
+
