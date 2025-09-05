@@ -102,7 +102,7 @@
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
     - dirsrv_repl_this_node.role == 'consumer'
-    - rhds_disable_referrals | default(true)
+    - rhds_disable_referrals | default(false)
 
 - name: Enable | Build referral removal matrix
   vars:
@@ -126,7 +126,7 @@
   loop: "{{ dirsrv_repl_repl_get.results | default([]) }}"
   when:
     - dirsrv_repl_this_node.role == 'consumer'
-    - rhds_disable_referrals | default(true)
+    - rhds_disable_referrals | default(false)
 
 - name: Enable | Remove consumer referrals (lab only)
   ansible.builtin.command: >-
@@ -141,7 +141,7 @@
     - refs
   when:
     - dirsrv_repl_this_node.role == 'consumer'
-    - rhds_disable_referrals | default(true)
+    - rhds_disable_referrals | default(false)
 
 - name: Enable | Force mapping-tree state to backend (lab only)
   ansible.builtin.shell: |
@@ -159,7 +159,7 @@
   no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
-    - rhds_disable_referrals | default(true)
+    - rhds_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
 
 - name: Enable | Remove mapping-tree referral (lab only)
@@ -177,7 +177,7 @@
   no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
-    - rhds_disable_referrals | default(true)
+    - rhds_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
 
 - name: Enable | Ensure replication manager exists (SIMPLE)
