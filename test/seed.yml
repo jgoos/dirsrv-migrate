@@ -3,10 +3,10 @@
   hosts: dirsrv_source
   gather_facts: false
   vars:
-    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    instance: "{{ dirsrv_instance | default(inventory_hostname) }}"
+    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-{{ instance }}.socket"
     example_ldif: "/root/example.ldif"
     suffix: "o=example"
-    instance: "{{ dirsrv_instance | default('localhost') }}"
 
   pre_tasks:
     - name: Guard | Ensure Podman connection is used

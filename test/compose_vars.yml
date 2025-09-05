@@ -3,8 +3,8 @@
 dirsrv_password: password
 # For 389ds prebuilt containers (no systemd exposed), skip service control
 dirsrv_manage_service: false
-# Container instance name (from `dsctl -l`): slapd-localhost
-dirsrv_instance: localhost
+# Container instance name matches inventory hostname (e.g., ds-s1)
+dirsrv_instance: "{{ inventory_hostname }}"
 # optional artifact run label for repeatable snapshots
 dirsrv_artifact_run: compose-dev
 
@@ -17,8 +17,8 @@ dirsrv_backends:
 dirsrv_export_method: dsconf
 
 # For container tests, use LDAPI socket (if needed by external tools)
-dirsrv_ldapi_socket_path: "/data/run/slapd-localhost.socket"
-dirsrv_ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+dirsrv_ldapi_socket_path: "/data/run/slapd-{{ inventory_hostname }}.socket"
+dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | urlencode }}"
 
 # Skip config archive/schema extraction in containers
 dirsrv_collect_config: false

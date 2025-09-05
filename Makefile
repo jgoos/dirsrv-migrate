@@ -61,14 +61,14 @@ up_389ds_fast: net
 
 init_389ds:
 	@echo "Waiting for LDAP (ldapi) on ds-s1 and ds-c1..."
-	@for i in $$(seq 1 60); do \
-	  podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
-	  sleep 1; \
-	done; \
-	for i in $$(seq 1 60); do \
-	  podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
-	  sleep 1; \
-	done
+        @for i in $$(seq 1 60); do \
+          podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-s1.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
+          sleep 1; \
+        done; \
+        for i in $$(seq 1 60); do \
+          podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
+          sleep 1; \
+        done
 
 seed_389ds: deps_podman
 	@echo "Seeding example data on ds-s1 via Ansible"
@@ -95,11 +95,11 @@ repl_pod:
 verify_389ds:
 	@echo "Verifying entries on target (ds-c1)"
 	@verify() { name="$$1" cmd="$$2"; for i in $$(seq 1 60); do eval "$$cmd" >/dev/null 2>&1 && echo "OK: $$name" && return 0; sleep 1; done; echo "Missing $$name" >&2; exit 1; }; \
-	verify "alice present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice | grep -q 'uid=alice'"; \
-	verify "bob present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=bob | grep -q 'uid=bob'"; \
-	verify "staff includes devs" "podman exec ds-c1 ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b 'cn=staff,ou=groups,o=example' -s base uniqueMember | grep -iq 'uniqueMember: cn=devs,ou=groups,o=example'"; \
-	verify "app-x present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=app-x | grep -q 'uid=app-x'"; \
-	verify "ACI present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example '(aci=*)' aci | grep -q 'Devs can write mail'"
+        verify "alice present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example uid=alice | grep -q 'uid=alice'"; \
+        verify "bob present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example uid=bob | grep -q 'uid=bob'"; \
+        verify "staff includes devs" "podman exec ds-c1 ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b 'cn=staff,ou=groups,o=example' -s base uniqueMember | grep -iq 'uniqueMember: cn=devs,ou=groups,o=example'"; \
+        verify "app-x present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example uid=app-x | grep -q 'uid=app-x'"; \
+        verify "ACI present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example '(aci=*)' aci | grep -q 'Devs can write mail'"
 
 deps_podman:
 	ansible-galaxy collection install containers.podman
@@ -184,12 +184,12 @@ clean:
 
 init_389ds_mesh:
 	@echo "Waiting for LDAP (ldapi) on ds-s1, ds-c1, ds-s2, ds-c2..."
-	@for h in ds-s1 ds-c1 ds-s2 ds-c2; do \
-	  for i in $$(seq 1 60); do \
-	    podman exec $$h ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
-	    sleep 1; \
-	  done; \
-	done
+        @for h in ds-s1 ds-c1 ds-s2 ds-c2; do \
+          for i in $$(seq 1 60); do \
+            podman exec $$h ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-$${h}.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
+            sleep 1; \
+          done; \
+        done
 
 repl_pod_mesh:
 	$(call _time,ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
