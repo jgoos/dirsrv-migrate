@@ -1,15 +1,174 @@
 ---
+- name: Connectivity prechecks (inter-container TCP)
+  hosts: ds-s2,ds-c1,ds-c2
+  gather_facts: false
+  vars:
+    targets: ["ds-s1:3389", "ds-s2:3389"]
+  tasks:
+    - name: Wait for LDAP TCP on {{ item }}
+      ansible.builtin.command:
+        argv: [ldapsearch, -x, -H, "ldap://{{ item }}", -s, base, -b, '', 1.1]
+      register: tcp_probe
+      changed_when: false
+      until: tcp_probe.rc == 0
+      retries: 60
+      delay: 3
+      loop: "{{ targets }}"
+
 - name: Configure mesh replication (2 suppliers, 2 consumers)
   hosts: all
   gather_facts: false
   roles:
     - role: dirsrv_repl
 
+# Supplier-only steady gate before any write
+- name: Supplier steady gate (s1⇄s2)
+  hosts: ds-s1,ds-s2
+  gather_facts: false
+  vars:
+    suffix_dn: "cn=o\\3Dexample,cn=mapping tree,cn=config"
+    # Local supplier agreement name per host
+    supplier_agreement: "{{ 's1-to-s2' if inventory_hostname == 'ds-s1' else 's2-to-s1' }}"
+    agmt_dn: "cn={{ supplier_agreement }},cn=replica,{{ suffix_dn }}"
+  tasks:
+    - name: Check changelog presence
+      ansible.builtin.command:
+        argv: [ldapsearch, -x, -H, ldap://localhost:3389, -s, base, -b, cn=changelog, 1.1]
+      register: s_cl
+      changed_when: false
+      failed_when: false
+
+    - name: Ensure changelog exists (set-changelog)
+      ansible.builtin.command:
+        argv: [dsconf, -j, -H, ldap://localhost:3389, ldap, -D, "cn=Directory Manager", -w, password, replication, set-changelog, --suffix, o=example, --max-age, 7d]
+      register: s_cl_set
+      changed_when: s_cl_set.rc == 0
+      failed_when: false
+      when: s_cl.rc != 0
+
+    - name: Gate suppliers green on {{ supplier_agreement }}
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - -H
+          - "ldap://localhost:3389"
+          - -b
+          - "{{ agmt_dn }}"
+          - -s
+          - base
+          - nsds5replicaLastInitStatusJSON
+          - nsds5replicaLastUpdateStatusJSON
+          - nsds5ReplicaUpdateInProgress
+      register: s_sup
+      changed_when: false
+      retries: 120
+      delay: 3
+      until: >-
+        (s_sup.stdout is search('"state"\s*:\s*"green"')) and not (s_sup.stdout | lower | default('')) is search('updateinprogress: true')
+
+# Deterministic re-init for supplier→consumer links before verify
+- name: Supplier→consumer re-init if needed
+  hosts: ds-s1,ds-s2
+  gather_facts: false
+  vars:
+    suffix: o=example
+    my_links:
+      ds-s1: [{ name: s1-to-c1, to_host: ds-c1 }]
+      ds-s2: [{ name: s2-to-c2, to_host: ds-c2 }]
+  tasks:
+    - name: Check agmt status for {{ item.name }} (bind-aware JSON)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -j
+          - -H
+          - "ldap://{{ inventory_hostname }}:3389"
+          - ldap
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - repl-agmt
+          - status
+          - --suffix
+          - "{{ suffix }}"
+          - "{{ item.name }}"
+      register: sc_status
+      changed_when: false
+      failed_when: false
+      loop: "{{ my_links[inventory_hostname] | default([]) }}"
+
+    - name: Backoff before init (per link)
+      ansible.builtin.pause:
+        seconds: 10
+      loop: "{{ sc_status.results | default([]) }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      when: >-
+        (item.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress|initialized"\s*:\s*false|"error"\s*:\s*[^0]')
+
+    - name: Run supplier→consumer init (bind-aware)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -H
+          - "ldap://{{ inventory_hostname }}:3389"
+          - ldap
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - repl-agmt
+          - init
+          - --suffix
+          - "{{ suffix }}"
+          - "{{ item.item.name }}"
+      register: sc_init
+      changed_when: sc_init.rc == 0
+      failed_when: false
+      loop: "{{ sc_status.results | default([]) }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      when: >-
+        (item.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress|initialized"\s*:\s*false|"error"\s*:\s*[^0]')
+
+    - name: Poll status to green after init (per link)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -j
+          - -H
+          - "ldap://{{ inventory_hostname }}:3389"
+          - ldap
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - repl-agmt
+          - status
+          - --suffix
+          - "{{ suffix }}"
+          - "{{ item.item.name }}"
+      register: sc_status_after
+      changed_when: false
+      failed_when: false
+      until: >-
+        (sc_status_after.stdout is search('"error"\s*:\s*0')) and not (sc_status_after.stdout | lower | default('')) is search('in progress')
+      retries: 30
+      delay: 5
+      loop: "{{ sc_status.results | default([]) }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      when: >-
+        (item.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress|initialized"\s*:\s*false|"error"\s*:\s*[^0]')
+
 - name: "Incremental replication check: add entry on ds-s2 and verify everywhere"
   hosts: ds-s2
   gather_facts: false
   vars:
-    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-{{ inventory_hostname }}.socket"
     test_dn: "uid=replica-mesh-test,o=example"
     test_ldif: |
       dn: uid=replica-mesh-test,o=example
@@ -94,14 +253,13 @@
       changed_when: true
       failed_when: false
 
-    - name: Verify test entry exists on ds-s2
+    - name: Verify test entry exists on ds-s2 (TCP LDAP)
       ansible.builtin.command:
         argv:
           - ldapsearch
-          - -Y
-          - EXTERNAL
+          - -x
           - -H
-          - "{{ ldapi_uri }}"
+          - "ldap://ds-s2:3389"
           - -b
           - "{{ test_dn }}"
           - -s
@@ -176,31 +334,163 @@
       ansible.builtin.import_tasks: ../roles/dirsrv_repl/tasks/wait_green.yml
 
 - name: "Verify replication reached consumer ds-c1 (via ds-s1) and ds-c2 + supplier ds-s1"
-  hosts: ds-s1,ds-c1,ds-c2
+  hosts: ds-s1,ds-s2,ds-c1,ds-c2
   gather_facts: false
   vars:
-    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    ansible_remote_tmp: /tmp/.ansible
     test_dn: "uid=replica-mesh-test,o=example"
   tasks:
     - name: Wait for agreements healthy on ds-s1 before verify
       when: inventory_hostname == 'ds-s1'
       ansible.builtin.import_tasks: ../roles/dirsrv_repl/tasks/wait_green.yml
+    - block:
+        - name: Wait for replicated entry to appear (TCP LDAP)
+          ansible.builtin.command:
+            argv:
+              - ldapsearch
+              - -x
+              - -H
+              - "ldap://{{ inventory_hostname }}:3389"
+              - -b
+              - "{{ test_dn }}"
+              - -s
+              - base
+              - objectClass=*
+          register: search
+          changed_when: false
+          retries: 120
+          delay: 3
+          until: search.rc == 0
+          when: inventory_hostname in ['ds-s1','ds-c1','ds-c2']
+      rescue:
+        - name: RCA | detect instance log dir
+          ansible.builtin.shell: |
+            set -euo pipefail
+            for d in /var/log/dirsrv/slapd-*; do [ -d "$d" ] && { echo "$d"; exit 0; }; done; echo "/var/log/dirsrv"; exit 0
+          register: rca_logdir
+          changed_when: false
+          failed_when: false
 
-    - name: Wait for replicated entry to appear
-      ansible.builtin.command:
-        argv:
-          - ldapsearch
-          - -Y
-          - EXTERNAL
-          - -H
-          - "{{ ldapi_uri }}"
-          - -b
-          - "{{ test_dn }}"
-          - -s
-          - base
-          - objectClass=*
-      register: search
-      changed_when: false
-      retries: 120
-      delay: 3
-      until: search.rc == 0
+        - name: RCA | fetch error/access logs
+          ansible.builtin.fetch:
+            src: "{{ item }}"
+            dest: ".ansible/artifacts/logs/{{ inventory_hostname }}-{{ item | basename }}"
+            flat: true
+            fail_on_missing: false
+          loop:
+            - "{{ (rca_logdir.stdout | default('/var/log/dirsrv')) | trim }}/errors"
+            - "{{ (rca_logdir.stdout | default('/var/log/dirsrv')) | trim }}/access"
+            - "{{ (rca_logdir.stdout | default('/var/log/dirsrv')) | trim }}/audit"
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | replication agreements (list)
+          ansible.builtin.command:
+            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:3389", ldap, -D, "cn=Directory Manager", -w, password, replication, list]
+          register: rca_list
+          changed_when: false
+          failed_when: false
+        - name: RCA | replication monitor
+          ansible.builtin.command:
+            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:3389", ldap, -D, "cn=Directory Manager", -w, password, replication, monitor]
+          register: rca_mon
+          changed_when: false
+          failed_when: false
+        - name: RCA | agreements status (s1->c1) (bind-aware)
+          ansible.builtin.command:
+            argv: [dsconf, -j, -H, "ldap://ds-s1:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, o=example, s1-to-c1]
+          register: rca_status_s1c1
+          changed_when: false
+          failed_when: false
+          when: inventory_hostname == 'ds-s1'
+
+        - name: RCA | agreements status s2->c2 (bind-aware)
+          ansible.builtin.command:
+            argv: [dsconf, -j, -H, "ldap://ds-s2:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, o=example, s2-to-c2]
+          register: rca_status_s2c2
+          changed_when: false
+          failed_when: false
+          delegate_to: ds-s2
+          when: inventory_hostname != 'ds-s2'
+
+        - name: RCA | tcp listening
+          ansible.builtin.command:
+            argv: [ss, -lnt]
+          register: rca_ss
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | hosts + hostname
+          ansible.builtin.shell: |
+            hostname -f; echo ---; cat /etc/hosts
+          register: rca_hosts
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | namingContexts
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, base, -b, '', namingContexts]
+          register: rca_nc
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | changelog (suppliers only)
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, one, -b, cn=changelog, 1.1]
+          register: rca_cl
+          changed_when: false
+          failed_when: false
+          when: inventory_hostname in ['ds-s1','ds-s2']
+        - name: RCA | supplier→consumer connectivity (s2→c2)
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, '', 1.1]
+          register: rca_conn_s2c2
+          changed_when: false
+          failed_when: false
+          delegate_to: ds-s2
+
+        - name: RCA | agreement entry s2->c2 on supplier
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, base, -b, 'cn=s2-to-c2,cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config', nsDS5ReplicaHost, nsDS5ReplicaPort, nsDS5ReplicaBindDN, nsDS5ReplicaTransportInfo]
+          register: rca_agmt_entry
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | consumer replica entry on c2
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, 'cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config', nsDS5ReplicaType, nsDS5ReplicaRoot, nsDS5ReplicaId, nsDS5Flags]
+          register: rca_consumer_replica
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | suppliers changelog presence (s2)
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, one, -b, cn=changelog, 1.1]
+          register: rca_cl_s2
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | RUV on s2 and c2
+          ansible.builtin.command:
+            argv: [bash, -lc, "ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-s2:3389 -s base -b 'cn=replica,cn=o\\3Dexample,cn=mapping tree,cn=config' nsds50ruv; echo '---'; ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-c2:3389 -s base -b 'cn=replica,cn=o\\3Dexample,cn=mapping tree,cn=config' nsds50ruv"]
+          register: rca_ruv
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | show
+          ansible.builtin.debug:
+            msg: |
+              list={{ rca_list.stdout | default('') }}
+              mon={{ rca_mon.stdout | default('') }}
+              s1c1={{ rca_status_s1c1.stdout | default('') }}
+              s2c2={{ rca_status_s2c2.stdout | default('') }}
+              ss={{ rca_ss.stdout | default('') }}
+              hosts={{ rca_hosts.stdout | default('') }}
+              nc={{ rca_nc.stdout | default('') }}
+              cl={{ rca_cl.stdout | default('') }}
+              conn_s2c2={{ rca_conn_s2c2.stdout | default('') }}
+              agmt_s2c2={{ rca_agmt_entry.stdout | default('') }}
+              c2_replica={{ rca_consumer_replica.stdout | default('') }}
+              cl_s2={{ rca_cl_s2.stdout | default('') }}
+              ruv={{ rca_ruv.stdout | default('') }}
+          failed_when: true

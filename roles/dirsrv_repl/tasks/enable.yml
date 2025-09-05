@@ -143,10 +143,48 @@
     - dirsrv_repl_this_node.role == 'consumer'
     - rhds_disable_referrals | default(false)
 
+- name: Enable | Read mapping-tree state/referral (lab only)
+  ansible.builtin.command:
+    argv:
+      - ldapsearch
+      - -Y
+      - EXTERNAL
+      - -H
+      - "{{ dirsrv_ldapi_uri }}"
+      - -s
+      - base
+      - -LLL
+      - -b
+      - "cn={{ item | replace('=','\\3D') }},cn=mapping tree,cn=config"
+      - nsslapd-state
+      - nsslapd-referral
+  register: dirsrv_repl_map_read
+  changed_when: false
+  failed_when: false
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - rhds_disable_referrals | default(false)
+    - dirsrv_ldapi_uri | default('') | length > 0
+
+- name: Enable | Compute mapping-tree adjustments needed
+  ansible.builtin.set_fact:
+    _dirsrv_map_actions: >-
+      {{ (_dirsrv_map_actions | default([])) + [
+          {
+            'suffix': item.item,
+            'need_state': not (item.stdout is search('^nsslapd-state:\\s*backend', multiline=True)),
+            'has_ref': (item.stdout is search('^nsslapd-referral:', multiline=True))
+          }
+        ]
+      }}
+  loop: "{{ dirsrv_repl_map_read.results | default([]) }}"
+  when:
+    - rhds_disable_referrals | default(false)
+
 - name: Enable | Force mapping-tree state to backend (lab only)
   ansible.builtin.shell: |
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item | regex_replace('=','\\3D') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=','\\3D') }},cn=mapping tree,cn=config
     changetype: modify
     replace: nsslapd-state
     nsslapd-state: backend
@@ -157,15 +195,16 @@
   changed_when: dirsrv_repl_mapstate_backend.rc == 0
   failed_when: false
   no_log: true
-  loop: "{{ dirsrv_repl_suffixes }}"
+  loop: "{{ _dirsrv_map_actions | default([]) }}"
   when:
     - rhds_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
+    - item.need_state | bool
 
 - name: Enable | Remove mapping-tree referral (lab only)
   ansible.builtin.shell: |
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item | regex_replace('=','\\3D') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=','\\3D') }},cn=mapping tree,cn=config
     changetype: modify
     delete: nsslapd-referral
     LDIF
@@ -175,10 +214,27 @@
   changed_when: dirsrv_repl_mapref_del.rc == 0
   failed_when: false
   no_log: true
-  loop: "{{ dirsrv_repl_suffixes }}"
+  loop: "{{ _dirsrv_map_actions | default([]) }}"
   when:
     - rhds_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
+    - item.has_ref | bool
+
+- name: Enable | Restart instance after mapping-tree changes (lab only)
+  ansible.builtin.command:
+    argv:
+      - dsctl
+      - "{{ dirsrv_repl_this_node.instance }}"
+      - restart
+  register: dirsrv_repl_restart
+  changed_when: dirsrv_repl_restart.rc == 0
+  failed_when: false
+  when:
+    - rhds_disable_referrals | default(false)
+    - (
+        (dirsrv_repl_mapstate_backend is defined and (dirsrv_repl_mapstate_backend.results | default([]) | length) > 0) or
+        (dirsrv_repl_mapref_del is defined and (dirsrv_repl_mapref_del.results | default([]) | length) > 0)
+      )
 
 - name: Enable | Ensure replication manager exists (SIMPLE)
   ansible.builtin.command: >-

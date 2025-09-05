@@ -3,18 +3,18 @@
 
 dirsrv_password: password
 dirsrv_manage_service: false
-dirsrv_instance: localhost
-dirsrv_ldapi_socket_path: "/data/run/slapd-localhost.socket"
-dirsrv_ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+dirsrv_instance: "{{ inventory_hostname }}"
+dirsrv_ldapi_socket_path: "/data/run/slapd-{{ inventory_hostname }}.socket"
+dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | urlencode }}"
 
 dirsrv_repl_suffixes:
   - "o=example"
 
 dirsrv_repl_nodes:
-  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 3389, protocol: LDAP }
-  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 3389, protocol: LDAP }
-  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 3389, protocol: LDAP }
-  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 3389, protocol: LDAP }
+  ds-s1: { role: supplier, instance: "ds-s1", host: "ds-s1", port: 3389, protocol: LDAP }
+  ds-c1: { role: consumer, instance: "ds-c1", host: "ds-c1", port: 3389, protocol: LDAP }
+  ds-s2: { role: supplier, instance: "ds-s2", host: "ds-s2", port: 3389, protocol: LDAP }
+  ds-c2: { role: consumer, instance: "ds-c2", host: "ds-c2", port: 3389, protocol: LDAP }
 
 dirsrv_repl_replica_ids:
   "o=example":
