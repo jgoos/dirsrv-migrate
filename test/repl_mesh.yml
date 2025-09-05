@@ -436,7 +436,7 @@
 
         - name: RCA | agreement entry s2->c2 on supplier
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, base, -b, "cn=s2-to-c2,cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config", nsDS5ReplicaHost nsDS5ReplicaPort nsDS5ReplicaBindDN nsDS5ReplicaTransportInfo]
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, base, -b, 'cn=s2-to-c2,cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config', nsDS5ReplicaHost, nsDS5ReplicaPort, nsDS5ReplicaBindDN, nsDS5ReplicaTransportInfo]
           register: rca_agmt_entry
           changed_when: false
           failed_when: false
