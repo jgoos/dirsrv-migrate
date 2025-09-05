@@ -155,13 +155,12 @@
       - base
       - -LLL
       - -b
-      - "cn={{ item | regex_replace('=','\\3D') }},cn=mapping tree,cn=config"
+      - "cn={{ item | replace('=','\\3D') }},cn=mapping tree,cn=config"
       - nsslapd-state
       - nsslapd-referral
   register: dirsrv_repl_map_read
   changed_when: false
   failed_when: false
-  no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
     - rhds_disable_referrals | default(false)
@@ -185,7 +184,7 @@
 - name: Enable | Force mapping-tree state to backend (lab only)
   ansible.builtin.shell: |
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item.suffix | regex_replace('=','\\3D') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=','\\3D') }},cn=mapping tree,cn=config
     changetype: modify
     replace: nsslapd-state
     nsslapd-state: backend
@@ -205,7 +204,7 @@
 - name: Enable | Remove mapping-tree referral (lab only)
   ansible.builtin.shell: |
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item.suffix | regex_replace('=','\\3D') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=','\\3D') }},cn=mapping tree,cn=config
     changetype: modify
     delete: nsslapd-referral
     LDIF

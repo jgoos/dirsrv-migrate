@@ -43,11 +43,13 @@ help:
 # 389-DS prebuilt image workflow (no systemd/SSH)
 pull_if_needed: .stamps/pull
 .stamps/pull:
+	@mkdir -p .stamps
 	@podman image exists $(DS_IMAGE) >/dev/null 2>&1 || podman pull $(DS_IMAGE)
 	@touch $@
 
 net: .stamps/net
 .stamps/net:
+	@mkdir -p .stamps
 	@podman network inspect $(NET_NAME) >/dev/null 2>&1 || podman network create $(NET_NAME)
 	@touch $@
 
