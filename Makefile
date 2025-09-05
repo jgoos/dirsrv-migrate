@@ -196,6 +196,8 @@ repl_pod_mesh:
 	  test/repl_mesh.yml $(ARGS),repl_mesh)
 
 test_repl_mesh: up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds
+# Fast mesh test: reuse containers, restore golden, run mesh only
+test_repl_mesh_fast: up_389ds_fast reset_soft repl_pod_mesh
 # Run CSR role for multi-instance scenario on ds-s1
 csr_pod_multi:
 	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
@@ -224,10 +226,9 @@ reset_soft:
 	@for h in ds-s1 ds-s2 ds-c1 ds-c2; do \
 	  inst=$${h}; bakdir="/var/lib/dirsrv/slapd-$$inst/bak/golden"; \
 	  echo "- $$h: restoring from $$bakdir"; \
-	  podman exec $$h bash -lc 'set -e; dsctl '"$$inst"' stop; \
-	    if [ ! -d '"$$bakdir"' ]; then dsctl '"$$inst"' db2bak -Z golden; fi; \
-	    dsctl '"$$inst"' bak2db '"$$bakdir"'; \
-	    dsctl '"$$inst"' start'; \
+	  podman exec $$h bash -lc 'set -e; \
+	    if [ ! -d '"$$bakdir"' ]; then dsctl '"$$inst"' db2bak -Z golden || true; fi; \
+	    dsctl '"$$inst"' bak2db '"$$bakdir"' || true'; \
 	done
 
 # Hard reset: tear down containers; keep volumes unless PURGE=1

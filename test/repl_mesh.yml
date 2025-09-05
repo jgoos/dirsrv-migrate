@@ -218,6 +218,27 @@
           delay: 3
           until: search.rc == 0
       rescue:
+        - name: RCA | detect instance log dir
+          ansible.builtin.shell: |
+            set -euo pipefail
+            for d in /var/log/dirsrv/slapd-*; do [ -d "$d" ] && { echo "$d"; exit 0; }; done; echo "/var/log/dirsrv"; exit 0
+          register: rca_logdir
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | fetch error/access logs
+          ansible.builtin.fetch:
+            src: "{{ item }}"
+            dest: ".ansible/artifacts/logs/{{ inventory_hostname }}-{{ item | basename }}"
+            flat: true
+            fail_on_missing: false
+          loop:
+            - "{{ (rca_logdir.stdout | default('/var/log/dirsrv')) | trim }}/errors"
+            - "{{ (rca_logdir.stdout | default('/var/log/dirsrv')) | trim }}/access"
+            - "{{ (rca_logdir.stdout | default('/var/log/dirsrv')) | trim }}/audit"
+          changed_when: false
+          failed_when: false
+
         - name: RCA | replication agreements (list)
           ansible.builtin.command:
             argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, replication, list]
