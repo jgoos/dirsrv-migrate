@@ -443,7 +443,7 @@
 
         - name: RCA | consumer replica entry on c2
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, "cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config", nsDS5ReplicaType nsDS5ReplicaRoot nsDS5ReplicaId nsDS5Flags]
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, 'cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config', nsDS5ReplicaType, nsDS5ReplicaRoot, nsDS5ReplicaId, nsDS5Flags]
           register: rca_consumer_replica
           changed_when: false
           failed_when: false
