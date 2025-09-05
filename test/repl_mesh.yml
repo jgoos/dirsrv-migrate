@@ -381,39 +381,44 @@
           register: rca_mon
           changed_when: false
           failed_when: false
-    - name: RCA | agreements status (s1->c1) (bind-aware)
-      ansible.builtin.command:
-        argv: [dsconf, -j, -H, "ldap://ds-s1:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, o=example, s1-to-c1]
-      register: rca_status_s1c1
-      changed_when: false
-      failed_when: false
-      when: inventory_hostname == 'ds-s1'
-        - name: RCA | agreements status s2->c2
+        - name: RCA | agreements status (s1->c1) (bind-aware)
           ansible.builtin.command:
-            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, repl-agmt, status, --suffix, o=example, s2-to-c2]
+            argv: [dsconf, -j, -H, "ldap://ds-s1:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, o=example, s1-to-c1]
+          register: rca_status_s1c1
+          changed_when: false
+          failed_when: false
+          when: inventory_hostname == 'ds-s1'
+
+        - name: RCA | agreements status s2->c2 (bind-aware)
+          ansible.builtin.command:
+            argv: [dsconf, -j, -H, "ldap://ds-s2:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, o=example, s2-to-c2]
           register: rca_status_s2c2
           changed_when: false
           failed_when: false
           delegate_to: ds-s2
           when: inventory_hostname != 'ds-s2'
+
         - name: RCA | tcp listening
           ansible.builtin.command:
             argv: [ss, -lnt]
           register: rca_ss
           changed_when: false
           failed_when: false
+
         - name: RCA | hosts + hostname
           ansible.builtin.shell: |
             hostname -f; echo ---; cat /etc/hosts
           register: rca_hosts
           changed_when: false
           failed_when: false
+
         - name: RCA | namingContexts
           ansible.builtin.command:
             argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, base, -b, '', namingContexts]
           register: rca_nc
           changed_when: false
           failed_when: false
+
         - name: RCA | changelog (suppliers only)
           ansible.builtin.command:
             argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, one, -b, cn=changelog, 1.1]
