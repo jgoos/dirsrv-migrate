@@ -1,40 +1,85 @@
 version: "3.8"
 
+networks:
+  replnet:
+    driver: bridge
+    name: replnet
+
 services:
   ds-s1:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-s1
+    hostname: ds-s1
     environment:
+      - DS_SERVERID=ds-s1
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    # No host ports needed for tests; use ldapi inside containers
+      - DS_PORT=3389
+    networks:
+      replnet:
+        aliases: [ds-s1]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
     volumes:
       - type: bind
         source: ../testdata/example.ldif
         target: /root/example.ldif
 
-  ds-c1:
-    image: quay.io/389ds/dirsrv:latest
-    container_name: ds-c1
-    environment:
-      - DS_DM_PASSWORD=password
-      - DS_SUFFIX=o=example
-    # No host ports needed for tests; use ldapi inside containers
-
   ds-s2:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-s2
+    hostname: ds-s2
     environment:
+      - DS_SERVERID=ds-s2
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    # No host ports needed for tests; use ldapi inside containers
+      - DS_PORT=3389
+    networks:
+      replnet:
+        aliases: [ds-s2]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
+
+  ds-c1:
+    image: quay.io/389ds/dirsrv:latest
+    container_name: ds-c1
+    hostname: ds-c1
+    environment:
+      - DS_SERVERID=ds-c1
+      - DS_DM_PASSWORD=password
+      - DS_SUFFIX=o=example
+      - DS_PORT=3389
+    networks:
+      replnet:
+        aliases: [ds-c1]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
 
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-c2
+    hostname: ds-c2
     environment:
+      - DS_SERVERID=ds-c2
       - DS_DM_PASSWORD=password
       - DS_SUFFIX=o=example
-    # No host ports needed for tests; use ldapi inside containers
+      - DS_PORT=3389
+    networks:
+      replnet:
+        aliases: [ds-c2]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
 
 volumes: {}

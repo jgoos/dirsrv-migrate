@@ -1,4 +1,20 @@
 ---
+- name: Connectivity prechecks (inter-container TCP)
+  hosts: ds-s2,ds-c1,ds-c2
+  gather_facts: false
+  vars:
+    targets: ["ds-s1:3389", "ds-s2:3389"]
+  tasks:
+    - name: Wait for LDAP TCP on {{ item }}
+      ansible.builtin.command:
+        argv: [ldapsearch, -x, -H, "ldap://{{ item }}", -s, base, -b, '', 1.1]
+      register: tcp_probe
+      changed_when: false
+      until: tcp_probe.rc == 0
+      retries: 60
+      delay: 3
+      loop: "{{ targets }}"
+
 - name: Configure mesh replication (2 suppliers, 2 consumers)
   hosts: all
   gather_facts: false
@@ -94,14 +110,13 @@
       changed_when: true
       failed_when: false
 
-    - name: Verify test entry exists on ds-s2
+    - name: Verify test entry exists on ds-s2 (TCP LDAP)
       ansible.builtin.command:
         argv:
           - ldapsearch
-          - -Y
-          - EXTERNAL
+          - -x
           - -H
-          - "{{ ldapi_uri }}"
+          - "ldap://ds-s2:3389"
           - -b
           - "{{ test_dn }}"
           - -s
@@ -179,28 +194,82 @@
   hosts: ds-s1,ds-c1,ds-c2
   gather_facts: false
   vars:
-    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
     test_dn: "uid=replica-mesh-test,o=example"
   tasks:
     - name: Wait for agreements healthy on ds-s1 before verify
       when: inventory_hostname == 'ds-s1'
       ansible.builtin.import_tasks: ../roles/dirsrv_repl/tasks/wait_green.yml
-
-    - name: Wait for replicated entry to appear
-      ansible.builtin.command:
-        argv:
-          - ldapsearch
-          - -Y
-          - EXTERNAL
-          - -H
-          - "{{ ldapi_uri }}"
-          - -b
-          - "{{ test_dn }}"
-          - -s
-          - base
-          - objectClass=*
-      register: search
-      changed_when: false
-      retries: 120
-      delay: 3
-      until: search.rc == 0
+    - block:
+        - name: Wait for replicated entry to appear (TCP LDAP)
+          ansible.builtin.command:
+            argv:
+              - ldapsearch
+              - -x
+              - -H
+              - "ldap://{{ inventory_hostname }}:3389"
+              - -b
+              - "{{ test_dn }}"
+              - -s
+              - base
+              - objectClass=*
+          register: search
+          changed_when: false
+          retries: 120
+          delay: 3
+          until: search.rc == 0
+      rescue:
+        - name: RCA | replication agreements (list)
+          ansible.builtin.command:
+            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, replication, list]
+          register: rca_list
+          changed_when: false
+          failed_when: false
+        - name: RCA | replication monitor
+          ansible.builtin.command:
+            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, replication, monitor]
+          register: rca_mon
+          changed_when: false
+          failed_when: false
+        - name: RCA | agreements status (per expected)
+          ansible.builtin.command:
+            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, repl-agmt, status, --suffix, o=example, s1-to-c1]
+          register: rca_status_s1c1
+          changed_when: false
+          failed_when: false
+          when: inventory_hostname == 'ds-s1'
+        - name: RCA | tcp listening
+          ansible.builtin.command:
+            argv: [ss, -lnt]
+          register: rca_ss
+          changed_when: false
+          failed_when: false
+        - name: RCA | hosts + hostname
+          ansible.builtin.shell: |
+            hostname -f; echo ---; cat /etc/hosts
+          register: rca_hosts
+          changed_when: false
+          failed_when: false
+        - name: RCA | namingContexts
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, base, -b, '', namingContexts]
+          register: rca_nc
+          changed_when: false
+          failed_when: false
+        - name: RCA | changelog (suppliers only)
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, one, -b, cn=changelog, 1.1]
+          register: rca_cl
+          changed_when: false
+          failed_when: false
+          when: inventory_hostname in ['ds-s1','ds-s2']
+        - name: RCA | show
+          ansible.builtin.debug:
+            msg: |
+              list={{ rca_list.stdout | default('') }}
+              mon={{ rca_mon.stdout | default('') }}
+              s1c1={{ rca_status_s1c1.stdout | default('') }}
+              ss={{ rca_ss.stdout | default('') }}
+              hosts={{ rca_hosts.stdout | default('') }}
+              nc={{ rca_nc.stdout | default('') }}
+              cl={{ rca_cl.stdout | default('') }}
+          failed_when: true
