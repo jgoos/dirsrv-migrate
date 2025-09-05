@@ -1,0 +1,46 @@
+---
+- name: Wait | Skip if no agreements
+  ansible.builtin.meta: noop
+  when: dirsrv_repl_agreements | length == 0
+
+- name: Wait | Compute local dsconf URL when missing
+  ansible.builtin.set_fact:
+    dirsrv_repl_conn_url: >-
+      {{
+        (dirsrv_ldapi_uri | default(''))
+        if (dirsrv_ldapi_uri | default('') | length > 0)
+        else (
+          dirsrv_repl_conn_url | default(
+            (
+              (dirsrv_repl_nodes[inventory_hostname].protocol | lower) ~ '://' ~
+              dirsrv_repl_nodes[inventory_hostname].host ~ ':' ~
+              dirsrv_repl_nodes[inventory_hostname].port
+            ) if (dirsrv_repl_nodes is defined and dirsrv_repl_nodes[inventory_hostname] is defined) else ''
+          )
+        )
+      }}
+
+- name: Wait | Until each local agreement is healthy
+  vars:
+    agmt_suffix: "{{ item.0.key }}"
+    agmt: "{{ item.1 }}"
+    tries: "{{ rhds_repl_wait_max_retries | default(120) }}"
+    delay: "{{ rhds_repl_wait_delay | default(3) }}"
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    -j repl-agmt status --suffix "{{ agmt_suffix }}" {{ agmt.name }}
+  register: out
+  no_log: true
+  changed_when: false
+  failed_when: false
+  until: >-
+    (out.stdout is search('"error"\s*:\s*0')) or
+    (out.stdout is search('successfully initialized')) or
+    (out.stdout is search('"initialized"\s*:\s*true'))
+  retries: "{{ tries }}"
+  delay: "{{ delay }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - agmt.from == inventory_hostname

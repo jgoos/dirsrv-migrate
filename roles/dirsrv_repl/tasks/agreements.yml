@@ -152,3 +152,18 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
+
+# Option B: targeted, single retry for transient init failures
+- name: Agreements | Retry online init once on transient/in-progress errors
+  ansible.builtin.include_tasks: retry_init.yml
+  vars:
+    retry_suffix: "{{ item.0.key }}"
+    retry_agmt: "{{ item.1.name }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_init_mode == 'online'
+    - (item.1.init | default(false)) | bool
+    - not ansible_check_mode

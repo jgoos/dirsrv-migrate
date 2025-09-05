@@ -7,7 +7,6 @@ galaxy_info:
   min_ansible_version: "2.12"
   platforms:
     - name: EL
-      versions: [8, 9]
+      versions: [all]
   galaxy_tags: [tls, csr, rhds, 389ds, security]
 dependencies: []
-

@@ -11,10 +11,10 @@ dirsrv_repl_suffixes:
   - "o=example"
 
 dirsrv_repl_nodes:
-  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 389, protocol: LDAP }
-  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 389, protocol: LDAP }
-  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 389, protocol: LDAP }
-  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 389, protocol: LDAP }
+  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 3389, protocol: LDAP }
+  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 3389, protocol: LDAP }
+  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 3389, protocol: LDAP }
+  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 3389, protocol: LDAP }
 
 dirsrv_repl_replica_ids:
   "o=example":
@@ -23,7 +23,7 @@ dirsrv_repl_replica_ids:
 
 dirsrv_repl_auth:
   method: SIMPLE
-  bind_dn: "cn=Directory Manager"
+  bind_dn: "cn=replication manager,cn=config"
   bind_password: "{{ dirsrv_password }}"
 
 dirsrv_repl_agreements:
@@ -37,3 +37,6 @@ dirsrv_repl_agreements:
 
 dirsrv_repl_set_release_timeout: false
 dirsrv_repl_run_replcheck: false
+
+# Lab-only: avoid suffix-level referrals masking local state
+rhds_disable_referrals: true
