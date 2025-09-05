@@ -30,6 +30,7 @@
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     -j repl-agmt status --suffix "{{ agmt_suffix }}" {{ agmt.name }}
   register: out
+  no_log: true
   changed_when: false
   failed_when: false
   until: >-
