@@ -370,13 +370,13 @@
 
         - name: RCA | replication agreements (list)
           ansible.builtin.command:
-            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, replication, list]
+            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:3389", ldap, -D, "cn=Directory Manager", -w, password, replication, list]
           register: rca_list
           changed_when: false
           failed_when: false
         - name: RCA | replication monitor
           ansible.builtin.command:
-            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, replication, monitor]
+            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:3389", ldap, -D, "cn=Directory Manager", -w, password, replication, monitor]
           register: rca_mon
           changed_when: false
           failed_when: false
