@@ -226,10 +226,14 @@ test_csr_edges: up_389ds init_389ds deps_podman csr_pod verify_csr csr_pod_multi
 reset_soft:
 	@echo "Soft reset: restoring golden backups (if missing, creating once)"
 	@for h in ds-s1 ds-s2 ds-c1 ds-c2; do \
-	  inst=$${h}; bakdir="/var/lib/dirsrv/slapd-$$inst/bak/golden"; \
+	  inst=localhost; bakroot="/var/lib/dirsrv/slapd-$$inst/bak"; bakdir="$$bakroot/golden"; \
 	  echo "- $$h: restoring from $$bakdir"; \
 	  podman exec $$h bash -lc 'set -e; \
-	    if [ ! -d '"$$bakdir"' ]; then dsctl '"$$inst"' db2bak -Z golden || true; fi; \
+	    if [ ! -d '"$$bakdir"' ]; then \
+	      dsctl '"$$inst"' db2bak || true; \
+	      last=$$(ls -1dt '"$$bakroot"'/* 2>/dev/null | head -1 || true); \
+	      if [ -n "$$last" ]; then rm -rf '"$$bakdir"' && cp -a "$$last" '"$$bakdir"'; fi; \
+	    fi; \
 	    dsctl '"$$inst"' bak2db '"$$bakdir"' || true'; \
 	done
 

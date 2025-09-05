@@ -88,59 +88,66 @@
       failed_when: false
       loop: "{{ my_links[inventory_hostname] | default([]) }}"
 
-    - name: Re-init {{ item.item.name }} on transient/non-green states
+    - name: Backoff before init (per link)
+      ansible.builtin.pause:
+        seconds: 10
+      loop: "{{ sc_status.results | default([]) }}"
+      loop_control: { label: "{{ item.item.name }}" }
       when: >-
         (item.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress|initialized"\s*:\s*false|"error"\s*:\s*[^0]')
-      block:
-        - name: Backoff before init
-          ansible.builtin.pause:
-            seconds: 10
 
-        - name: Run supplier→consumer init (bind-aware)
-          ansible.builtin.command:
-            argv:
-              - dsconf
-              - -H
-              - "ldap://{{ inventory_hostname }}:3389"
-              - ldap
-              - -D
-              - "cn=Directory Manager"
-              - -w
-              - password
-              - repl-agmt
-              - init
-              - --suffix
-              - "{{ suffix }}"
-              - "{{ item.item.name }}"
-          register: sc_init
-          changed_when: sc_init.rc == 0
-          failed_when: false
-
-        - name: Poll status to green after init
-          ansible.builtin.command:
-            argv:
-              - dsconf
-              - -j
-              - -H
-              - "ldap://{{ inventory_hostname }}:3389"
-              - ldap
-              - -D
-              - "cn=Directory Manager"
-              - -w
-              - password
-              - repl-agmt
-              - status
-              - --suffix
-              - "{{ suffix }}"
-              - "{{ item.item.name }}"
-          register: sc_status_after
-          changed_when: false
-          failed_when: false
-          until: >-
-            (sc_status_after.stdout is search('"error"\s*:\s*0')) and not (sc_status_after.stdout | lower | default('')) is search('in progress')
-          retries: 30
-          delay: 5
+    - name: Run supplier→consumer init (bind-aware)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -H
+          - "ldap://{{ inventory_hostname }}:3389"
+          - ldap
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - repl-agmt
+          - init
+          - --suffix
+          - "{{ suffix }}"
+          - "{{ item.item.name }}"
+      register: sc_init
+      changed_when: sc_init.rc == 0
+      failed_when: false
       loop: "{{ sc_status.results | default([]) }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      when: >-
+        (item.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress|initialized"\s*:\s*false|"error"\s*:\s*[^0]')
+
+    - name: Poll status to green after init (per link)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -j
+          - -H
+          - "ldap://{{ inventory_hostname }}:3389"
+          - ldap
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - password
+          - repl-agmt
+          - status
+          - --suffix
+          - "{{ suffix }}"
+          - "{{ item.item.name }}"
+      register: sc_status_after
+      changed_when: false
+      failed_when: false
+      until: >-
+        (sc_status_after.stdout is search('"error"\s*:\s*0')) and not (sc_status_after.stdout | lower | default('')) is search('in progress')
+      retries: 30
+      delay: 5
+      loop: "{{ sc_status.results | default([]) }}"
+      loop_control: { label: "{{ item.item.name }}" }
+      when: >-
+        (item.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress|initialized"\s*:\s*false|"error"\s*:\s*[^0]')
 
 - name: "Incremental replication check: add entry on ds-s2 and verify everywhere"
   hosts: ds-s2
