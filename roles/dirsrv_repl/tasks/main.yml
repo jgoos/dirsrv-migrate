@@ -6,6 +6,7 @@
         path: "{{ item }}"
       register: dirsrv_repl_dsconf_stats
       loop:
+        - /usr/bin/dsconf
         - /usr/sbin/dsconf
         - /sbin/dsconf
         - dsconf
@@ -22,6 +23,7 @@
         path: "{{ item }}"
       register: dirsrv_repl_dsctl_stats
       loop:
+        - /usr/bin/dsctl
         - /usr/sbin/dsctl
         - /sbin/dsctl
         - dsctl
