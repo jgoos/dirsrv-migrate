@@ -322,6 +322,7 @@
   hosts: ds-s1,ds-s2,ds-c1,ds-c2
   gather_facts: false
   vars:
+    ansible_remote_tmp: /tmp/.ansible
     test_dn: "uid=replica-mesh-test,o=example"
   tasks:
     - name: Wait for agreements healthy on ds-s1 before verify
@@ -380,13 +381,13 @@
           register: rca_mon
           changed_when: false
           failed_when: false
-        - name: RCA | agreements status (per expected)
-          ansible.builtin.command:
-            argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, repl-agmt, status, --suffix, o=example, s1-to-c1]
-          register: rca_status_s1c1
-          changed_when: false
-          failed_when: false
-          when: inventory_hostname == 'ds-s1'
+    - name: RCA | agreements status (s1->c1) (bind-aware)
+      ansible.builtin.command:
+        argv: [dsconf, -j, -H, "ldap://ds-s1:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, o=example, s1-to-c1]
+      register: rca_status_s1c1
+      changed_when: false
+      failed_when: false
+      when: inventory_hostname == 'ds-s1'
         - name: RCA | agreements status s2->c2
           ansible.builtin.command:
             argv: [dsconf, -D, "cn=Directory Manager", -w, password, "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket", -j, repl-agmt, status, --suffix, o=example, s2-to-c2]
@@ -420,6 +421,42 @@
           changed_when: false
           failed_when: false
           when: inventory_hostname in ['ds-s1','ds-s2']
+        - name: RCA | supplier→consumer connectivity (s2→c2)
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, '', 1.1]
+          register: rca_conn_s2c2
+          changed_when: false
+          failed_when: false
+          delegate_to: ds-s2
+
+        - name: RCA | agreement entry s2->c2 on supplier
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, base, -b, "cn=s2-to-c2,cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config", nsDS5ReplicaHost nsDS5ReplicaPort nsDS5ReplicaBindDN nsDS5ReplicaTransportInfo]
+          register: rca_agmt_entry
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | consumer replica entry on c2
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, "cn=replica,cn=o\3Dexample,cn=mapping tree,cn=config", nsDS5ReplicaType nsDS5ReplicaRoot nsDS5ReplicaId nsDS5Flags]
+          register: rca_consumer_replica
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | suppliers changelog presence (s2)
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, one, -b, cn=changelog, 1.1]
+          register: rca_cl_s2
+          changed_when: false
+          failed_when: false
+
+        - name: RCA | RUV on s2 and c2
+          ansible.builtin.command:
+            argv: [bash, -lc, "ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-s2:3389 -s base -b 'cn=replica,cn=o\\3Dexample,cn=mapping tree,cn=config' nsds50ruv; echo '---'; ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-c2:3389 -s base -b 'cn=replica,cn=o\\3Dexample,cn=mapping tree,cn=config' nsds50ruv"]
+          register: rca_ruv
+          changed_when: false
+          failed_when: false
+
         - name: RCA | show
           ansible.builtin.debug:
             msg: |
@@ -431,4 +468,9 @@
               hosts={{ rca_hosts.stdout | default('') }}
               nc={{ rca_nc.stdout | default('') }}
               cl={{ rca_cl.stdout | default('') }}
+              conn_s2c2={{ rca_conn_s2c2.stdout | default('') }}
+              agmt_s2c2={{ rca_agmt_entry.stdout | default('') }}
+              c2_replica={{ rca_consumer_replica.stdout | default('') }}
+              cl_s2={{ rca_cl_s2.stdout | default('') }}
+              ruv={{ rca_ruv.stdout | default('') }}
           failed_when: true
