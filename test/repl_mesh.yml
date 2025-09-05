@@ -168,7 +168,7 @@
   hosts: ds-s2
   gather_facts: false
   vars:
-    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+    ldapi_uri: "ldapi://%2Fdata%2Frun%2Fslapd-{{ inventory_hostname }}.socket"
     test_dn: "uid=replica-mesh-test,o=example"
     test_ldif: |
       dn: uid=replica-mesh-test,o=example
