@@ -33,9 +33,12 @@
   changed_when: false
   failed_when: false
   until: >-
-    (out.stdout is search('"error"\s*:\s*0')) or
-    (out.stdout is search('successfully initialized')) or
-    (out.stdout is search('"initialized"\s*:\s*true'))
+    (
+      out.stdout is search('"error"\s*:\s*0') or
+      out.stdout is search('"initialized"\s*:\s*true') or
+      out.stdout is search('successfully initialized')
+    )
+    and not (out.stdout | lower | default('')) is search('in progress')
   retries: "{{ tries }}"
   delay: "{{ delay }}"
   with_subelements:

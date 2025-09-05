@@ -20,9 +20,9 @@ services:
         aliases: [ds-s1]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 3s
-      timeout: 2s
-      retries: 20
+      interval: 1s
+      timeout: 1s
+      retries: 30
     volumes:
       - type: bind
         source: ../testdata/example.ldif
@@ -42,9 +42,9 @@ services:
         aliases: [ds-s2]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 3s
-      timeout: 2s
-      retries: 20
+      interval: 1s
+      timeout: 1s
+      retries: 30
 
   ds-c1:
     image: quay.io/389ds/dirsrv:latest
@@ -60,9 +60,9 @@ services:
         aliases: [ds-c1]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 3s
-      timeout: 2s
-      retries: 20
+      interval: 1s
+      timeout: 1s
+      retries: 30
 
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
@@ -78,8 +78,8 @@ services:
         aliases: [ds-c2]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 3s
-      timeout: 2s
-      retries: 20
+      interval: 1s
+      timeout: 1s
+      retries: 30
 
 volumes: {}
