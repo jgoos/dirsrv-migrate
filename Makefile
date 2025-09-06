@@ -68,7 +68,11 @@ up_389ds: pull_if_needed net
 	@# Ensure host log dirs for bind mounts (test-only; harmless if unused)
 	@mkdir -p .ansible/test_logs
 	@for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
-	  mkdir -p .ansible/containers/$$svc/var-log-dirsrv .ansible/containers/$$svc/data-logs; \
+	  mkdir -p \
+	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost \
+	    .ansible/containers/$$svc/var-lib-dirsrv-slapd-localhost \
+	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost-certs \
+	    .ansible/containers/$$svc/var-log-dirsrv-slapd-localhost; \
 	done
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up)
 
@@ -76,7 +80,11 @@ up_389ds_fast: net
 	@# Ensure host log dirs for bind mounts (test-only; harmless if unused)
 	@mkdir -p .ansible/test_logs
 	@for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
-	  mkdir -p .ansible/containers/$$svc/var-log-dirsrv .ansible/containers/$$svc/data-logs; \
+	  mkdir -p \
+	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost \
+	    .ansible/containers/$$svc/var-lib-dirsrv-slapd-localhost \
+	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost-certs \
+	    .ansible/containers/$$svc/var-log-dirsrv-slapd-localhost; \
 	done
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up_fast)
 

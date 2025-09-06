@@ -19,7 +19,7 @@ services:
       dsnet:
         aliases: [ds-s1, s1.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
       timeout: 2s
       retries: 50
@@ -27,13 +27,19 @@ services:
       - type: bind
         source: ../testdata/example.ldif
         target: /root/example.ldif
-      # Test-only: persist DS logs onto host for AI analysis
+      # Explicit DS instance persistence (config/data/certs/logs)
       - type: bind
-        source: ../.ansible/containers/ds-s1/var-log-dirsrv
-        target: /var/log/dirsrv
+        source: ../.ansible/containers/ds-s1/etc-dirsrv-slapd-localhost
+        target: /etc/dirsrv/slapd-localhost:Z
       - type: bind
-        source: ../.ansible/containers/ds-s1/data-logs
-        target: /data/logs
+        source: ../.ansible/containers/ds-s1/var-lib-dirsrv-slapd-localhost
+        target: /var/lib/dirsrv/slapd-localhost:Z
+      - type: bind
+        source: ../.ansible/containers/ds-s1/etc-dirsrv-slapd-localhost-certs
+        target: /etc/dirsrv/slapd-localhost/certs:Z
+      - type: bind
+        source: ../.ansible/containers/ds-s1/var-log-dirsrv-slapd-localhost
+        target: /var/log/dirsrv/slapd-localhost:Z
 
   ds-s2:
     image: quay.io/389ds/dirsrv:latest
@@ -48,18 +54,23 @@ services:
       dsnet:
         aliases: [ds-s2, s2.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
       timeout: 2s
       retries: 50
     volumes:
-      # Test-only: persist DS logs onto host for AI analysis
       - type: bind
-        source: ../.ansible/containers/ds-s2/var-log-dirsrv
-        target: /var/log/dirsrv
+        source: ../.ansible/containers/ds-s2/etc-dirsrv-slapd-localhost
+        target: /etc/dirsrv/slapd-localhost:Z
       - type: bind
-        source: ../.ansible/containers/ds-s2/data-logs
-        target: /data/logs
+        source: ../.ansible/containers/ds-s2/var-lib-dirsrv-slapd-localhost
+        target: /var/lib/dirsrv/slapd-localhost:Z
+      - type: bind
+        source: ../.ansible/containers/ds-s2/etc-dirsrv-slapd-localhost-certs
+        target: /etc/dirsrv/slapd-localhost/certs:Z
+      - type: bind
+        source: ../.ansible/containers/ds-s2/var-log-dirsrv-slapd-localhost
+        target: /var/log/dirsrv/slapd-localhost:Z
 
   ds-c1:
     image: quay.io/389ds/dirsrv:latest
@@ -74,18 +85,23 @@ services:
       dsnet:
         aliases: [ds-c1, c1.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
       timeout: 2s
       retries: 50
     volumes:
-      # Test-only: persist DS logs onto host for AI analysis
       - type: bind
-        source: ../.ansible/containers/ds-c1/var-log-dirsrv
-        target: /var/log/dirsrv
+        source: ../.ansible/containers/ds-c1/etc-dirsrv-slapd-localhost
+        target: /etc/dirsrv/slapd-localhost:Z
       - type: bind
-        source: ../.ansible/containers/ds-c1/data-logs
-        target: /data/logs
+        source: ../.ansible/containers/ds-c1/var-lib-dirsrv-slapd-localhost
+        target: /var/lib/dirsrv/slapd-localhost:Z
+      - type: bind
+        source: ../.ansible/containers/ds-c1/etc-dirsrv-slapd-localhost-certs
+        target: /etc/dirsrv/slapd-localhost/certs:Z
+      - type: bind
+        source: ../.ansible/containers/ds-c1/var-log-dirsrv-slapd-localhost
+        target: /var/log/dirsrv/slapd-localhost:Z
 
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
@@ -100,17 +116,22 @@ services:
       dsnet:
         aliases: [ds-c2, c2.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
       timeout: 2s
       retries: 50
     volumes:
-      # Test-only: persist DS logs onto host for AI analysis
       - type: bind
-        source: ../.ansible/containers/ds-c2/var-log-dirsrv
-        target: /var/log/dirsrv
+        source: ../.ansible/containers/ds-c2/etc-dirsrv-slapd-localhost
+        target: /etc/dirsrv/slapd-localhost:Z
       - type: bind
-        source: ../.ansible/containers/ds-c2/data-logs
-        target: /data/logs
+        source: ../.ansible/containers/ds-c2/var-lib-dirsrv-slapd-localhost
+        target: /var/lib/dirsrv/slapd-localhost:Z
+      - type: bind
+        source: ../.ansible/containers/ds-c2/etc-dirsrv-slapd-localhost-certs
+        target: /etc/dirsrv/slapd-localhost/certs:Z
+      - type: bind
+        source: ../.ansible/containers/ds-c2/var-log-dirsrv-slapd-localhost
+        target: /var/log/dirsrv/slapd-localhost:Z
 
 volumes: {}

@@ -62,7 +62,7 @@ tasks:
       - All references to 3389 are removed or updated to 389.
 
   - title: "Compose: Add explicit volumes for config/data/certs/logs with :Z"
-    status: todo
+    status: fixed
     priority: P1
     prompt: |
       Persist DS data and prepare for TLS by mounting explicit volumes:
@@ -99,7 +99,7 @@ tasks:
       - DS logs persist across restarts under host path; configs survive `podman compose down/up`.
 
   - title: "Compose: Switch healthchecks to LDAPI (EXTERNAL bind)"
-    status: todo
+    status: fixed
     priority: P1
     prompt: |
       Use a robust readiness probe that does not depend on TCP or credentials:
@@ -365,7 +365,7 @@ tasks:
       - `make net` creates or confirms `dsnet` network.
 
   - title: "Replication Manager: Verify creation and inbound bind DN authorization"
-    status: todo
+    status: fixed
     priority: P1
     prompt: |
       Confirm the replication role’s steps succeeded on each node:

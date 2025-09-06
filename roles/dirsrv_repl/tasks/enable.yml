@@ -485,3 +485,47 @@
   when:
     - dirsrv_repl_auth.method == 'SIMPLE'
     - agree.to == inventory_hostname
+
+- name: Verify | Replication manager entry exists (guarded)
+  ansible.builtin.command:
+    argv:
+      - ldapsearch
+      - -x
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - -H
+      - "{{ dirsrv_repl_conn_url }}"
+      - -b
+      - cn=config
+      - -s
+      - sub
+      - "(&(objectClass=nsSimpleSecurityObject)(cn=replication manager))"
+      - dn
+  register: dirsrv_repl_mgr_search
+  changed_when: false
+  failed_when: dirsrv_repl_mgr_search.rc != 0
+  when:
+    - dirsrv_repl_verify_post_enable | bool
+    - dirsrv_repl_auth.method == 'SIMPLE'
+
+- name: Verify | Allowed bind DN present for each suffix (guarded)
+  vars:
+    suffix: "{{ item }}"
+  ansible.builtin.command: >-
+    dsconf -j -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication get --suffix "{{ suffix }}"
+  register: dirsrv_repl_get_cfg
+  changed_when: false
+  failed_when: >-
+    (dirsrv_repl_get_cfg.rc != 0) or
+    (
+      (
+        ((dirsrv_repl_get_cfg.stdout | from_json).attrs.nsds5replicabinddn | default([])) | map('lower') | list
+      ) is not contains (dirsrv_repl_auth.bind_dn | lower)
+    )
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - dirsrv_repl_verify_post_enable | bool
+    - dirsrv_repl_auth.method == 'SIMPLE'

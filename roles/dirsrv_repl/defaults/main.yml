@@ -88,3 +88,6 @@ dirsrv_artifact_root_effective: >-
   {{ ([dirsrv_artifact_root, dirsrv_artifact_run] | path_join)
      if (dirsrv_artifact_run | default('') | length > 0)
      else dirsrv_artifact_root }}
+
+# Post-enable verification (guarded)
+dirsrv_repl_verify_post_enable: false
