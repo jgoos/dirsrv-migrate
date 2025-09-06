@@ -3,8 +3,18 @@
 
 # Instances inside containers are named 'localhost' and listen on port 389
 dirsrv_repl_nodes:
-  ds-s1: { role: supplier, instance: "localhost", host: "s1.dsnet.test", port: 636, protocol: LDAPS }
-  ds-c1: { role: consumer, instance: "localhost", host: "c1.dsnet.test", port: 636, protocol: LDAPS }
+  ds-s1:
+    role: supplier
+    instance: "localhost"
+    host: "s1.dsnet.test"
+    port: 389
+    protocol: LDAP
+  ds-c1:
+    role: consumer
+    instance: "localhost"
+    host: "c1.dsnet.test"
+    port: 389
+    protocol: LDAP
 
 dirsrv_repl_suffixes:
   - "dc=example,dc=com"
@@ -20,7 +30,10 @@ dirsrv_repl_auth:
 
 dirsrv_repl_agreements:
   "dc=example,dc=com":
-    - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true }
+    - from: "ds-s1"
+      to: "ds-c1"
+      name: "s1-to-c1"
+      init: true
 
 dirsrv_repl_set_release_timeout: false
 dirsrv_repl_run_replcheck: false
