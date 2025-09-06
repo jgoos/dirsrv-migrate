@@ -11,7 +11,6 @@ services:
     container_name: ds-s1
     hostname: s1.dsnet.test
     environment:
-      - DS_SERVERID=ds-s1
       - DS_DM_PASSWORD=password
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
@@ -46,7 +45,6 @@ services:
     container_name: ds-s2
     hostname: s2.dsnet.test
     environment:
-      - DS_SERVERID=ds-s2
       - DS_DM_PASSWORD=password
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
@@ -77,7 +75,6 @@ services:
     container_name: ds-c1
     hostname: c1.dsnet.test
     environment:
-      - DS_SERVERID=ds-c1
       - DS_DM_PASSWORD=password
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
@@ -108,7 +105,6 @@ services:
     container_name: ds-c2
     hostname: c2.dsnet.test
     environment:
-      - DS_SERVERID=ds-c2
       - DS_DM_PASSWORD=password
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
