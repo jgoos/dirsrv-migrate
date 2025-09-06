@@ -25,8 +25,6 @@ dirsrv_csr:
 
   # Force regeneration even if CSR exists
   force: false
-
----
 # Test-only observability switches (default off)
 # Enable with: -e dirsrv_debug=true -e dirsrv_log_capture=true
 dirsrv_debug: false
