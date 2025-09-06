@@ -38,6 +38,11 @@ dirsrv_artifact_root_effective: >-
      if (dirsrv_artifact_run | default('') | length > 0)
      else dirsrv_artifact_root }}
 
+# Test-only observability switches (default off)
+# Enable with: -e dirsrv_debug=true -e dirsrv_log_capture=true
+dirsrv_debug: false
+dirsrv_log_capture: false
+
 # Control service management (helpful in containers without systemd)
 dirsrv_manage_service: true
 
@@ -46,7 +51,7 @@ dirsrv_manage_service: true
 dirsrv_ldap_tcp_uri: "ldap://localhost:389"
 # LDAPI socket path and URI (constructed by default for standard installs)
 dirsrv_ldapi_socket_path: "/var/run/dirsrv/slapd-{{ dirsrv_instance }}.socket"
-dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | urlencode }}"
+dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | regex_replace('/', '%2F') }}"
 
 # dsconf operation timeout (seconds). Applied when supported by dsconf.
 dirsrv_dsconf_timeout: 600

@@ -27,6 +27,13 @@ services:
       - type: bind
         source: ../testdata/example.ldif
         target: /root/example.ldif
+      # Test-only: persist DS logs onto host for AI analysis
+      - type: bind
+        source: ../.ansible/containers/ds-s1/var-log-dirsrv
+        target: /var/log/dirsrv
+      - type: bind
+        source: ../.ansible/containers/ds-s1/data-logs
+        target: /data/logs
 
   ds-s2:
     image: quay.io/389ds/dirsrv:latest
@@ -45,6 +52,14 @@ services:
       interval: 1s
       timeout: 1s
       retries: 30
+    volumes:
+      # Test-only: persist DS logs onto host for AI analysis
+      - type: bind
+        source: ../.ansible/containers/ds-s2/var-log-dirsrv
+        target: /var/log/dirsrv
+      - type: bind
+        source: ../.ansible/containers/ds-s2/data-logs
+        target: /data/logs
 
   ds-c1:
     image: quay.io/389ds/dirsrv:latest
@@ -63,6 +78,14 @@ services:
       interval: 1s
       timeout: 1s
       retries: 30
+    volumes:
+      # Test-only: persist DS logs onto host for AI analysis
+      - type: bind
+        source: ../.ansible/containers/ds-c1/var-log-dirsrv
+        target: /var/log/dirsrv
+      - type: bind
+        source: ../.ansible/containers/ds-c1/data-logs
+        target: /data/logs
 
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
@@ -81,5 +104,13 @@ services:
       interval: 1s
       timeout: 1s
       retries: 30
+    volumes:
+      # Test-only: persist DS logs onto host for AI analysis
+      - type: bind
+        source: ../.ansible/containers/ds-c2/var-log-dirsrv
+        target: /var/log/dirsrv
+      - type: bind
+        source: ../.ansible/containers/ds-c2/data-logs
+        target: /data/logs
 
 volumes: {}

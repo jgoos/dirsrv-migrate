@@ -10,10 +10,46 @@
   ansible.builtin.set_fact:
     dirsrv_repl_conn_url: >-
       {{
-        (dirsrv_ldapi_uri | default(''))
-        if (dirsrv_ldapi_uri | default('') | length > 0)
-        else ((dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port)
+        (dirsrv_ldapi_uri)
+          if (dirsrv_ldapi_uri | default('') | length > 0)
+          else (
+            (
+              'ldapi://' ~ (dirsrv_ldapi_socket_path | regex_replace('/', '%2F'))
+            ) if (dirsrv_ldapi_socket_path | default('') | length > 0)
+            else ((dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port)
+          )
       }}
+
+# Test-only: enable DS logs to ensure access/audit present (best-effort)
+- name: Log | Enable access log (test-only)
+  ansible.builtin.shell: |
+    cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
+    dn: cn=config
+    changetype: modify
+    replace: nsslapd-accesslog-logging-enabled
+    nsslapd-accesslog-logging-enabled: on
+    LDIF
+  args:
+    executable: /bin/sh
+  register: _log_access_on
+  changed_when: _log_access_on.rc == 0
+  failed_when: false
+  when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0)
+
+- name: Log | Enable audit log if supported (test-only)
+  ansible.builtin.shell: |
+    cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
+    dn: cn=config
+    changetype: modify
+    replace: nsslapd-auditlog-logging-enabled
+    nsslapd-auditlog-logging-enabled: on
+    LDIF
+  args:
+    executable: /bin/sh
+  register: _log_audit_on
+  changed_when: _log_audit_on.rc == 0
+  failed_when: false
+  when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0)
 
 - name: Enable | Ensure suffix mapping tree exists (safe)
   ansible.builtin.command:
@@ -64,6 +100,33 @@
   when:
     - dirsrv_repl_suffixes | length > 0
 
+# Test-only: Pre-enable state snapshots
+- name: State | Pre-enable replica state (JSON)
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    -j replication get --suffix "{{ item }}"
+  register: _pre_repl_get
+  changed_when: false
+  failed_when: false
+  no_log: true
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when: dirsrv_debug | bool
+
+- name: Artifacts | Write pre-enable replica state
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+  ansible.builtin.copy:
+    content: "{{ res.stdout | default('') }}"
+    dest: "{{ [__snap_dir, 'state-pre-enable-replica-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ _pre_repl_get.results | default([]) }}"
+  when: dirsrv_debug | bool
+
 - name: Enable | Run replication enable
   vars:
     repl_role: >-
@@ -78,15 +141,163 @@
   no_log: true
   register: dirsrv_repl_enable
   changed_when: dirsrv_repl_enable.rc == 0
-  failed_when: >-
-    dirsrv_repl_enable.rc != 0 and (
-      'already enabled' not in ((dirsrv_repl_enable.stdout | lower | default('')) + ' ' + (dirsrv_repl_enable.stderr | lower | default('')))
-    )
+  failed_when: false
   loop: "{{ dirsrv_repl_suffixes }}"
   loop_control:
     label: "{{ item }} -> role={{ repl_role }}"
   when:
     - dirsrv_repl_suffixes | length > 0
+
+- name: Snapshot | Replication enable command results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--passwd) +[^ ]+','--passwd ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'repl-enable-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-repl-enable-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_enable.results | default([]) }}"
+  when:
+    - dirsrv_debug | bool
+
+- name: Enable | Verify replication enabled for suffix
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    -j replication get --suffix "{{ item }}"
+  register: dirsrv_repl_enable_get
+  changed_when: false
+  failed_when: >-
+    (dirsrv_repl_enable_get.rc != 0) or
+    ((dirsrv_repl_enable_get.stdout | default('') | length) == 0) or
+    (((dirsrv_repl_enable_get.stdout | from_json).attrs.nsds5replicatype | default([]) | length) == 0)
+  loop: "{{ dirsrv_repl_suffixes }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - dirsrv_repl_suffixes | length > 0
+
+- name: Snapshot | Replication get (post-enable) results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'repl-get-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-repl-get-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_enable_get.results | default([]) }}"
+  when:
+    - dirsrv_debug | bool
+
+- name: State | Agreements list (post-enable, text)
+  vars:
+    suffix: "{{ item }}"
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - list
+      - --suffix
+      - "{{ suffix }}"
+  register: _post_agmt_list
+  changed_when: false
+  failed_when: false
+  no_log: true
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when: dirsrv_debug | bool
+
+- name: Artifacts | Write agreements list (text)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+  ansible.builtin.copy:
+    content: "{{ res.stdout | default('') }}"
+    dest: "{{ [__snap_dir, 'state-post-enable-agreements-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.txt'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ _post_agmt_list.results | default([]) }}"
+  when: dirsrv_debug | bool
+
+- name: State | Mapping tree (post-enable)
+  vars:
+    suffix: "{{ item }}"
+  ansible.builtin.command:
+    argv:
+      - ldapsearch
+      - -Y
+      - EXTERNAL
+      - -H
+      - "{{ dirsrv_ldapi_uri }}"
+      - -s
+      - base
+      - -LLL
+      - -b
+      - 'cn={{ suffix | replace("=","\\3D") }},cn=mapping tree,cn=config'
+      - \*
+  register: _post_mapping
+  changed_when: false
+  failed_when: false
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when: dirsrv_debug | bool and (dirsrv_ldapi_uri | default('') | length > 0)
+
+- name: Artifacts | Write mapping tree (LDIF)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+  ansible.builtin.copy:
+    content: "{{ res.stdout | default('') }}"
+    dest: "{{ [__snap_dir, 'state-post-enable-mapping-tree-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.ldif'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ _post_mapping.results | default([]) }}"
+  when: dirsrv_debug | bool and (dirsrv_ldapi_uri | default('') | length > 0)
 
 # Lab-only: remove consumer suffix-level referrals that can mask empty local state
 - name: Enable | Get replication config (may include referrals) per suffix

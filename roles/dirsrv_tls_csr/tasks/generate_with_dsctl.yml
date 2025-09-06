@@ -30,6 +30,44 @@
     - not ansible_check_mode
     - (not _csr_stat_pre.stat.exists) or (dirsrv_csr.force | default(false)) | bool
 
+- name: Snapshot | CSR generate (dsctl) results (test-only)
+  vars:
+    res: "{{ _dsctl_gen }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective | default(dirsrv_csr_artifacts_root_effective), inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd: "{{ __raw_cmd }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+    __payload: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'csr-dsctl-' ~ (dirsrv_csr_instance | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+  when: dirsrv_debug | bool and (_dsctl_csr_help.rc | default(1)) == 0 and ((not _csr_stat_pre.stat.exists) or (dirsrv_csr.force | default(false)) | bool) and not ansible_check_mode
+  block:
+    - name: Ensure local artifacts dir exists (controller)
+      ansible.builtin.file:
+        path: "{{ __snap_dir }}"
+        state: directory
+        mode: "0750"
+      connection: local
+      delegate_to: localhost
+      become: false
+    - name: Write command snapshot (csr dsctl)
+      ansible.builtin.copy:
+        content: "{{ __payload }}"
+        dest: "{{ [__snap_dir, 'cmd-csr-dsctl-' ~ (dirsrv_csr_instance | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+        mode: "0640"
+      connection: local
+      delegate_to: localhost
+      become: false
+
 - name: Normalize CSR permissions (dsctl)
   ansible.builtin.file:
     path: "{{ dirsrv_csr_csr_path }}"

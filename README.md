@@ -78,7 +78,7 @@ Tags (for troubleshooting)
 ## Local Testing (Podman, no SSH)
 This repo includes a minimal local lab using prebuilt 389‑DS images.
 
-- Bring up containers: `podman-compose -f compose/podman-compose.389ds.yml up -d` (or `podman compose ...` if preferred)
+- Bring up containers: `podman compose -f compose/podman-compose.389ds.yml up -d` (fallback: `podman-compose ...`)
 - Seed example data on source: `make seed_389ds`
 - Migrate via Podman connection: `make migrate_pod` (or `make test_389ds` for full flow)
 - Verify migration: `make verify_389ds`
@@ -90,6 +90,11 @@ Files
 - `test/compose_mapping.yml`: `ds-s1 → ds-c1` map.
 - `test/compose_vars.yml`: Test vars (e.g., `dirsrv_instance`, `dirsrv_manage_service: false`).
 - `test/seed.yml`: Seeds `testdata/example.ldif` into `ds-s1`.
+
+Tips
+- macOS: run `podman machine start` before tests. Ensure your user has access to the Podman socket.
+- This repo prefers native `podman compose` for stability; `podman-compose` is used only as a fallback.
+- Collections are installed locally under `.ansible/collections` via `collections/requirements.yml`.
 
 
 ## Key Variables (override as needed)
