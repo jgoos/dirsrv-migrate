@@ -1,0 +1,14 @@
+---
+- name: Verify replication (basic checks)
+  hosts: all
+  gather_facts: false
+  vars:
+    test_base: "{{ dirsrv_default_suffix | default('dc=example,dc=com') }}"
+  tasks:
+    - name: Naming contexts present (TCP LDAP 389)
+      ansible.builtin.command:
+        argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:389", -s, base, -b, '', namingContexts]
+      register: nc
+      changed_when: false
+      failed_when: nc.rc != 0
+

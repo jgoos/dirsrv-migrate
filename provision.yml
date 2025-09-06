@@ -1,0 +1,20 @@
+---
+- name: Provision 389-DS lab instances (TLS optional)
+  hosts: all
+  gather_facts: false
+  vars:
+    instance: "{{ dirsrv_instance | default('localhost') }}"
+    ldapi_uri: "{{ dirsrv_ldapi_uri | default('ldapi://%2Fdata%2Frun%2Fslapd-' ~ instance ~ '.socket') }}"
+  pre_tasks:
+    - name: Wait for DS readiness over LDAPI
+      ansible.builtin.command:
+        argv: [ldapsearch, -Y, EXTERNAL, -H, "{{ ldapi_uri }}", -s, base, -b, '', 1.1]
+      register: _ready
+      changed_when: false
+      retries: 120
+      delay: 2
+      until: _ready.rc == 0
+  roles:
+    - role: dirs389.tls
+      when: dirsrv_tls_enabled | default(false)
+

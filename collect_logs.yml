@@ -1,0 +1,26 @@
+---
+- name: Collect DS logs and container logs
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Detect instance log dir
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for d in /var/log/dirsrv/slapd-*; do [ -d "$d" ] && { echo "$d"; exit 0; }; done; echo "/var/log/dirsrv"; exit 0
+      register: logdir
+      changed_when: false
+      failed_when: false
+
+    - name: Fetch DS logs
+      ansible.builtin.fetch:
+        src: "{{ item }}"
+        dest: ".ansible/artifacts/logs/{{ inventory_hostname }}-{{ item | basename }}"
+        flat: true
+        fail_on_missing: false
+      loop:
+        - "{{ (logdir.stdout | default('/var/log/dirsrv')) | trim }}/errors"
+        - "{{ (logdir.stdout | default('/var/log/dirsrv')) | trim }}/access"
+        - "{{ (logdir.stdout | default('/var/log/dirsrv')) | trim }}/audit"
+      changed_when: false
+      failed_when: false
+

@@ -4,7 +4,7 @@ set -euo pipefail
 INSTANCE_NAME=${INSTANCE_NAME:-localhost}
 ROOT_DN=${ROOT_DN:-cn=Directory Manager}
 ROOT_PW=${ROOT_PW:-password}
-SUFFIX=${SUFFIX:-o=example}
+SUFFIX=${SUFFIX:-dc=example,dc=com}
 PORT=${PORT:-389}
 
 echo "[init] Creating instance '${INSTANCE_NAME}' on port ${PORT}..."

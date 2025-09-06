@@ -1,0 +1,7 @@
+---
+- name: Configure replication per inventory
+  hosts: all
+  gather_facts: false
+  roles:
+    - role: dirsrv_repl
+
