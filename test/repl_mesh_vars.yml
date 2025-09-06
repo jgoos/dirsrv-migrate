@@ -8,16 +8,16 @@ dirsrv_ldapi_socket_path: "/data/run/slapd-{{ dirsrv_instance }}.socket"
 dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | regex_replace('/', '%2F') }}"
 
 dirsrv_repl_suffixes:
-  - "o=example"
+  - "dc=example,dc=com"
 
 dirsrv_repl_nodes:
-  ds-s1: { role: supplier, instance: "localhost", host: "ds-s1", port: 3389, protocol: LDAP }
-  ds-c1: { role: consumer, instance: "localhost", host: "ds-c1", port: 3389, protocol: LDAP }
-  ds-s2: { role: supplier, instance: "localhost", host: "ds-s2", port: 3389, protocol: LDAP }
-  ds-c2: { role: consumer, instance: "localhost", host: "ds-c2", port: 3389, protocol: LDAP }
+  ds-s1: { role: supplier, instance: "localhost", host: "s1.dsnet.test", port: 636, protocol: LDAPS }
+  ds-c1: { role: consumer, instance: "localhost", host: "c1.dsnet.test", port: 636, protocol: LDAPS }
+  ds-s2: { role: supplier, instance: "localhost", host: "s2.dsnet.test", port: 636, protocol: LDAPS }
+  ds-c2: { role: consumer, instance: "localhost", host: "c2.dsnet.test", port: 636, protocol: LDAPS }
 
 dirsrv_repl_replica_ids:
-  "o=example":
+  "dc=example,dc=com":
     ds-s1: 1
     ds-s2: 2
 
@@ -27,7 +27,7 @@ dirsrv_repl_auth:
   bind_password: "{{ dirsrv_password }}"
 
 dirsrv_repl_agreements:
-  "o=example":
+  "dc=example,dc=com":
     # Supplier-to-supplier (bi-directional), init from ds-s1 to ds-s2
     - { from: "ds-s1", to: "ds-s2", name: "s1-to-s2", init: true }
     - { from: "ds-s2", to: "ds-s1", name: "s2-to-s1", init: false }

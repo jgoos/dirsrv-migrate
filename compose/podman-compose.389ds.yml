@@ -1,28 +1,28 @@
 version: "3.8"
 
 networks:
-  replnet:
+  dsnet:
     driver: bridge
-    name: replnet
+    name: dsnet
 
 services:
   ds-s1:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-s1
-    hostname: ds-s1
+    hostname: s1.dsnet.test
     environment:
       - DS_SERVERID=ds-s1
       - DS_DM_PASSWORD=password
-      - DS_SUFFIX=o=example
-      - DS_PORT=3389
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
     networks:
-      replnet:
-        aliases: [ds-s1]
+      dsnet:
+        aliases: [ds-s1, s1.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 1s
-      timeout: 1s
-      retries: 30
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
     volumes:
       - type: bind
         source: ../testdata/example.ldif
@@ -38,20 +38,20 @@ services:
   ds-s2:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-s2
-    hostname: ds-s2
+    hostname: s2.dsnet.test
     environment:
       - DS_SERVERID=ds-s2
       - DS_DM_PASSWORD=password
-      - DS_SUFFIX=o=example
-      - DS_PORT=3389
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
     networks:
-      replnet:
-        aliases: [ds-s2]
+      dsnet:
+        aliases: [ds-s2, s2.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 1s
-      timeout: 1s
-      retries: 30
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
     volumes:
       # Test-only: persist DS logs onto host for AI analysis
       - type: bind
@@ -64,20 +64,20 @@ services:
   ds-c1:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-c1
-    hostname: ds-c1
+    hostname: c1.dsnet.test
     environment:
       - DS_SERVERID=ds-c1
       - DS_DM_PASSWORD=password
-      - DS_SUFFIX=o=example
-      - DS_PORT=3389
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
     networks:
-      replnet:
-        aliases: [ds-c1]
+      dsnet:
+        aliases: [ds-c1, c1.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 1s
-      timeout: 1s
-      retries: 30
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
     volumes:
       # Test-only: persist DS logs onto host for AI analysis
       - type: bind
@@ -90,20 +90,20 @@ services:
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
     container_name: ds-c2
-    hostname: ds-c2
+    hostname: c2.dsnet.test
     environment:
       - DS_SERVERID=ds-c2
       - DS_DM_PASSWORD=password
-      - DS_SUFFIX=o=example
-      - DS_PORT=3389
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
     networks:
-      replnet:
-        aliases: [ds-c2]
+      dsnet:
+        aliases: [ds-c2, c2.dsnet.test]
     healthcheck:
-      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:3389 -s base -b '' 1.1 >/dev/null || exit 1"]
-      interval: 1s
-      timeout: 1s
-      retries: 30
+      test: ["CMD-SHELL", "ldapsearch -x -H ldap://localhost:389 -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
     volumes:
       # Test-only: persist DS logs onto host for AI analysis
       - type: bind

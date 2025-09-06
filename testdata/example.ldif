@@ -1,8 +1,8 @@
-dn: o=example
+dn: dc=example,dc=com
 objectClass: top
-objectClass: organization
-o: example
-aci: (target="ldap:///ou=people,o=example")(targetattr="cn || sn || givenName || mail || uid")
+objectClass: domain
+dc: example
+aci: (target="ldap:///ou=people,dc=example,dc=com")(targetattr="cn || sn || givenName || mail || uid")
   (version 3.0; acl "Allow anonymous read on basic attrs";
    allow (read, search, compare)
    (userdn = "ldap:///anyone"); )
@@ -10,27 +10,27 @@ aci: (targetattr = "telephoneNumber || mobile")
   (version 3.0; acl "Self can edit phone numbers";
    allow (write)
    (userdn = "ldap:///self"); )
-aci: (target="ldap:///ou=people,o=example")(targetattr = "mail")
+aci: (target="ldap:///ou=people,dc=example,dc=com")(targetattr = "mail")
   (version 3.0; acl "Devs can write mail";
    allow (write)
-   (groupdn = "ldap:///cn=devs,ou=groups,o=example"); )
+   (groupdn = "ldap:///cn=devs,ou=groups,dc=example,dc=com"); )
 
-dn: ou=people,o=example
+dn: ou=people,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: people
 
-dn: ou=groups,o=example
+dn: ou=groups,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: groups
 
-dn: ou=applications,o=example
+dn: ou=applications,dc=example,dc=com
 objectClass: top
 objectClass: organizationalUnit
 ou: applications
 
-dn: uid=alice,ou=people,o=example
+dn: uid=alice,ou=people,dc=example,dc=com
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
@@ -41,9 +41,9 @@ givenName: Alice
 uid: alice
 mail: alice@example.com
 telephoneNumber: +1 555 0100
-seeAlso: uid=bob,ou=people,o=example
+seeAlso: uid=bob,ou=people,dc=example,dc=com
 
-dn: uid=bob,ou=people,o=example
+dn: uid=bob,ou=people,dc=example,dc=com
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
@@ -55,7 +55,7 @@ uid: bob
 mail: bob@example.com
 telephoneNumber: +1 555 0101
 
-dn: uid=carol,ou=people,o=example
+dn: uid=carol,ou=people,dc=example,dc=com
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
@@ -67,7 +67,7 @@ uid: carol
 mail: carol@example.com
 telephoneNumber: +1 555 0102
 
-dn: uid=dave,ou=people,o=example
+dn: uid=dave,ou=people,dc=example,dc=com
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
@@ -79,27 +79,27 @@ uid: dave
 mail: dave@example.com
 mobile: +1 555 0103
 
-dn: cn=devs,ou=groups,o=example
+dn: cn=devs,ou=groups,dc=example,dc=com
 objectClass: top
 objectClass: groupOfUniqueNames
 cn: devs
-uniqueMember: uid=alice,ou=people,o=example
-uniqueMember: uid=bob,ou=people,o=example
+uniqueMember: uid=alice,ou=people,dc=example,dc=com
+uniqueMember: uid=bob,ou=people,dc=example,dc=com
 
-dn: cn=staff,ou=groups,o=example
+dn: cn=staff,ou=groups,dc=example,dc=com
 objectClass: top
 objectClass: groupOfUniqueNames
 cn: staff
-uniqueMember: cn=devs,ou=groups,o=example
-uniqueMember: uid=carol,ou=people,o=example
+uniqueMember: cn=devs,ou=groups,dc=example,dc=com
+uniqueMember: uid=carol,ou=people,dc=example,dc=com
 
-dn: cn=ops,ou=groups,o=example
+dn: cn=ops,ou=groups,dc=example,dc=com
 objectClass: top
 objectClass: groupOfUniqueNames
 cn: ops
-uniqueMember: uid=dave,ou=people,o=example
+uniqueMember: uid=dave,ou=people,dc=example,dc=com
 
-dn: uid=app-x,ou=applications,o=example
+dn: uid=app-x,ou=applications,dc=example,dc=com
 objectClass: top
 objectClass: person
 objectClass: organizationalPerson
@@ -115,19 +115,19 @@ userPassword: password
 # These represent operational subentries created by replication plugins.
 # They should be stripped post-export and not imported on different servers.
 
-dn: cn=repl keep alive 11886,o=example
+dn: cn=repl keep alive 11886,dc=example,dc=com
 objectClass: top
 objectClass: ldapsubentry
 objectClass: extensibleObject
 cn: repl keep alive 11886
 
-dn: cn=REPL KEEP ALIVE 42,o=example
+dn: cn=REPL KEEP ALIVE 42,dc=example,dc=com
 objectClass: top
 objectClass: ldapsubentry
 objectClass: extensibleObject
 cn: REPL KEEP ALIVE 42
 
-dn: cn=repl-keep-alive-777,o=example
+dn: cn=repl-keep-alive-777,dc=example,dc=com
 objectClass: top
 objectClass: ldapsubentry
 objectClass: extensibleObject
@@ -135,14 +135,14 @@ cn: repl-keep-alive-777
 
 # This one should NOT match the default pattern if variants are not enabled,
 # but is removed by our example broader variant filter above.
-dn: cn=repl keepalive 999,o=example
+dn: cn=repl keepalive 999,dc=example,dc=com
 objectClass: top
 objectClass: ldapsubentry
 objectClass: extensibleObject
 cn: repl keepalive 999
 
 # A non-replication ldapSubentry to ensure we don't blanket-remove all subentries
-dn: cn=monitor stub,o=example
+dn: cn=monitor stub,dc=example,dc=com
 objectClass: top
 objectClass: ldapsubentry
 objectClass: extensibleObject

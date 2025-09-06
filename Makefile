@@ -15,7 +15,7 @@ define _time
 endef
 
 DS_IMAGE := quay.io/389ds/dirsrv:latest
-NET_NAME := replnet
+NET_NAME := dsnet
 
 # Test logging env (enabled when TEST_LOGS=1)
 ANSIBLE_TEST_ENV := ANSIBLE_STDOUT_CALLBACK=json ANSIBLE_CALLBACKS_ENABLED=log_plays,profile_tasks ANSIBLE_LOG_PATH=.ansible/test_logs/ansible-run.log
@@ -42,6 +42,14 @@ migrate: deps_podman
 help:
 	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, test_csr, down_389ds, reset_389ds"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
+
+# Design-aligned aliases
+.PHONY: up mesh verify down logs
+up: up_389ds init_389ds
+mesh: repl_pod_mesh
+verify: verify_389ds
+down: down_389ds
+logs: bundle_logs
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
 pull_if_needed: .stamps/pull
@@ -110,11 +118,11 @@ repl_pod:
 verify_389ds:
 	@echo "Verifying entries on target (ds-c1)"
 	@verify() { name="$$1" cmd="$$2"; for i in $$(seq 1 60); do eval "$$cmd" >/dev/null 2>&1 && echo "OK: $$name" && return 0; sleep 1; done; echo "Missing $$name" >&2; exit 1; }; \
-	verify "alice present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice || ldapsearch -x -H ldap://localhost:3389 -b o=example uid=alice' | grep -q 'uid=alice'"; \
-	verify "bob present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=bob || ldapsearch -x -H ldap://localhost:3389 -b o=example uid=bob' | grep -q 'uid=bob'"; \
-	verify "staff includes devs" "podman exec ds-c1 sh -lc \"ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b \"cn=staff,ou=groups,o=example\" -s base uniqueMember || ldapsearch -x -LLL -H ldap://localhost:3389 -b \"cn=staff,ou=groups,o=example\" -s base uniqueMember\" | grep -iq 'uniqueMember: cn=devs,ou=groups,o=example'"; \
-	verify "app-x present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=app-x || ldapsearch -x -H ldap://localhost:3389 -b o=example uid=app-x' | grep -q 'uid=app-x'"; \
-	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example \''(aci=*)'\'' aci || ldapsearch -x -H ldap://localhost:3389 -b o=example \''(aci=*)'\'' aci' | grep -q 'Devs can write mail'"
+	verify "alice present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=alice' | grep -q 'uid=alice'"; \
+	verify "bob present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=bob' | grep -q 'uid=bob'"; \
+	verify "staff includes devs" "podman exec ds-c1 sh -lc \"ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember || ldapsearch -x -LLL -H ldap://localhost:389 -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember\" | grep -iq 'uniqueMember: cn=devs,ou=groups,dc=example,dc=com'"; \
+	verify "app-x present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=app-x' | grep -q 'uid=app-x'"; \
+	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com \''(aci=*)'\'' aci || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com \''(aci=*)'\'' aci' | grep -q 'Devs can write mail'"
 
 deps_podman:
 	ansible-galaxy collection install -r collections/requirements.yml
@@ -140,7 +148,7 @@ test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds
 	[ -f "$$CLEAN" ] || { echo "Missing cleaned LDIF: $$CLEAN" >&2; exit 1; }; \
 	[ -f "$$REM" ] || { echo "Missing removed LDIF gz: $$REM" >&2; exit 1; }; \
 	[ -f "$$ORIGGZ" ] || { echo "Missing original LDIF gz: $$ORIGGZ" >&2; exit 1; }; \
-	grep -q "^dn: uid=alice,ou=people,o=example" "$$CLEAN" || { echo "Cleaned LDIF missing expected entry (alice)" >&2; exit 1; }; \
+	grep -q "^dn: uid=alice,ou=people,dc=example,dc=com" "$$CLEAN" || { echo "Cleaned LDIF missing expected entry (alice)" >&2; exit 1; }; \
 	! grep -qi "^dn: cn=repl" "$$CLEAN" || { echo "Found replication keep-alive entry in cleaned LDIF" >&2; exit 1; }; \
 	echo "OK: ldif_filter_split produced expected artifacts and content"
 
