@@ -39,6 +39,46 @@
   when:
     - item.1.from == inventory_hostname
 
+- name: Snapshot | Ensure local artifacts dir exists (controller)
+  ansible.builtin.file:
+    path: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    state: directory
+    mode: "0750"
+  connection: local
+  delegate_to: localhost
+  become: false
+  when: dirsrv_debug | bool
+
+- name: Snapshot | Agreements list command results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item.0.key | default('') }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
+    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'agreements-list-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-agreements-list-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_agmt_list.results | default([]) }}"
+  when: dirsrv_debug | bool
+
 - name: Agreements | Create agreement when missing
   vars:
     suffix: "{{ item.0.key }}"
@@ -67,7 +107,10 @@
     argv: "{{ dirsrv_repl_agmt_cmd_base + dirsrv_repl_agmt_cmd_bind + dirsrv_repl_agmt_cmd_init + [agree.name] }}"
   register: dirsrv_repl_agmt_create
   changed_when: dirsrv_repl_agmt_create.rc == 0
-  failed_when: dirsrv_repl_agmt_create.rc != 0
+  failed_when: >-
+    dirsrv_repl_agmt_create.rc != 0 and (
+      'already exists' not in ((dirsrv_repl_agmt_create.stdout | lower | default('')) + ' ' + (dirsrv_repl_agmt_create.stderr | lower | default('')))
+    )
   no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
@@ -76,6 +119,38 @@
     - item.1.from == inventory_hostname
     - item.1.name not in (dirsrv_repl_agmt_list.stdout_lines | default([]))
     - not ansible_check_mode
+
+- name: Snapshot | Agreement create command results (test-only)
+  vars:
+    res: "{{ item }}"
+    agree: "{{ item.item.1 }}"
+    suffix: "{{ item.item.0.key }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
+    __san_cmd_2: "{{ __san_cmd_1 | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __san_cmd_2 | regex_replace('(?i)(--passwd) +[^ ]+','--passwd ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'agreement-create-' ~ (agree.name | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-agreement-create-' ~ (agree.name | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_agmt_create.results | default([]) }}"
+  when: dirsrv_debug | bool
 
 - name: Agreements | Warn if schedule configured with init=true (may pause)
   ansible.builtin.debug:
@@ -109,6 +184,37 @@
     - item.1.from == inventory_hostname
     - dirsrv_repl_schedule | length > 0
 
+- name: Snapshot | Agreement schedule set results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item.0.key }}"
+    agree: "{{ item.item.1.name }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'agreement-schedule-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-agreement-schedule-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_agmt_sched.results | default([]) }}"
+  when: dirsrv_debug | bool
+
 - name: Agreements | Apply fractional/strip lists
   ansible.builtin.command: >-
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
@@ -131,6 +237,37 @@
     - item.1.from == inventory_hostname
     - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
 
+- name: Snapshot | Agreement fractional/strip set results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item.0.key }}"
+    agree: "{{ item.item.1.name }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'agreement-attrs-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-agreement-attrs-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_agmt_frac.results | default([]) }}"
+  when: dirsrv_debug | bool
+
 - name: Agreements | Poll init-status to completion (online mode)
   vars:
     max_tries: 30
@@ -152,6 +289,37 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
+
+- name: Snapshot | Agreement init-status poll results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item.0.key }}"
+    agree: "{{ item.item.1.name }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'agreement-init-status-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-agreement-init-status-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_init_status.results | default([]) }}"
+  when: dirsrv_debug | bool
 
 # Option B: targeted, single retry for transient init failures
 - name: Agreements | Retry online init once on transient/in-progress errors

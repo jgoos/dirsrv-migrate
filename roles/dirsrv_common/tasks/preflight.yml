@@ -62,3 +62,55 @@
   ansible.builtin.set_fact:
     dirsrv_dsconf_import_timeout_args: "{{ ['--timeout', (dirsrv_dsconf_timeout | string)] if (dirsrv_dsconf_supports_timeout_import | default(false)) else [] }}"
   tags: [preflight]
+
+# Optional discovery: effective instance/socket derived from dsctl when present
+- name: Preflight | Discover dsctl candidates
+  ansible.builtin.set_fact:
+    dirsrv_dsctl_candidates:
+      - /usr/sbin/dsctl
+      - /sbin/dsctl
+      - dsctl
+  tags: [preflight]
+
+- name: Preflight | Stat dsctl candidates
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ dirsrv_dsctl_candidates }}"
+  register: dirsrv_dsctl_stats
+  changed_when: false
+  tags: [preflight]
+
+- name: Preflight | Select dsctl binary path
+  ansible.builtin.set_fact:
+    dirsrv_dsctl_bin: "{{ (dirsrv_dsctl_stats.results | selectattr('stat.exists', 'equalto', true) | map(attribute='stat.path') | list | first) | default('dsctl') }}"
+  tags: [preflight]
+
+- name: Preflight | Detect instances via dsctl -l
+  ansible.builtin.command:
+    argv: ["{{ dirsrv_dsctl_bin }}", "-l"]
+  register: _dsctl_list
+  changed_when: false
+  failed_when: false
+  tags: [preflight]
+
+- name: Preflight | Derive detected instance name from dsctl output
+  ansible.builtin.set_fact:
+    _dirsrv_instance_detected: >-
+      {{ (((_dsctl_list.stdout | default('')) | trim) == 'slapd-localhost')
+          | ternary('localhost', 'dir') }}
+  tags: [preflight]
+
+- name: Preflight | Set effective instance
+  ansible.builtin.set_fact:
+    dirsrv_instance_effective: >-
+      {{ (dirsrv_instance is defined and (dirsrv_instance | string | length) > 0)
+          | ternary(dirsrv_instance, _dirsrv_instance_detected) }}
+  tags: [preflight]
+
+- name: Preflight | Set effective ldapi socket path
+  ansible.builtin.set_fact:
+    dirsrv_ldapi_socket_path_effective: >-
+      {{ (dirsrv_ldapi_socket_path is defined and (dirsrv_ldapi_socket_path | string | length) > 0)
+          | ternary(dirsrv_ldapi_socket_path,
+                    '/var/run/dirsrv/slapd-' ~ (dirsrv_instance_effective) ~ '.socket') }}
+  tags: [preflight]

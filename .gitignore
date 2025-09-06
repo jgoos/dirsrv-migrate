@@ -25,3 +25,7 @@ compose/*.override.yml
 .env
 .pytest_cache/
 .coverage
+
+# Test artifacts (archives and stamps) – never commit
+logs-*.tar.gz
+.stamps/

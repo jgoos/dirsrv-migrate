@@ -117,6 +117,7 @@
               + (dirsrv_dsconf_import_timeout_args | default([]))
               + ['--suffix', dirsrv_backends[item].suffix, ([dirsrv_base_varldif, 'migration-' ~ item ~ '.cleaned.ldif'] | path_join)] }}"
   loop: "{{ dirsrv_backends.keys() | list }}"
+  register: _dirsrv_import_preferred
   changed_when: false
   when: dirsrv_dsconf_supports_suffix | default(false) and not ansible_check_mode
   tags: [import]
@@ -127,6 +128,46 @@
               + (dirsrv_dsconf_import_timeout_args | default([]))
               + [ dirsrv_backends[item].suffix, ([dirsrv_base_varldif, 'migration-' ~ item ~ '.cleaned.ldif'] | path_join) ] }}"
   loop: "{{ dirsrv_backends.keys() | list }}"
+  register: _dirsrv_import_positional
   changed_when: false
   when: not (dirsrv_dsconf_supports_suffix | default(false)) and not ansible_check_mode
   tags: [import]
+
+- name: Snapshot | Ensure local artifacts dir exists (controller)
+  ansible.builtin.file:
+    path: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    state: directory
+    mode: "0750"
+  connection: local
+  delegate_to: localhost
+  become: false
+  when: dirsrv_debug | bool
+
+- name: Snapshot | Import command results (test-only)
+  vars:
+    res: "{{ item }}"
+    backend: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd: "{{ __raw_cmd }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'import-' ~ (backend | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-import-' ~ (backend | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ (_dirsrv_import_preferred.results | default([])) + (_dirsrv_import_positional.results | default([])) }}"
+  when: dirsrv_debug | bool

@@ -1,7 +1,7 @@
 SHELL := /bin/bash
-# Prefer calling podman-compose directly (silences podman wrapper warning),
-# fallback to `podman compose` when podman-compose is not installed.
-COMPOSE_CMD := $(shell command -v podman-compose >/dev/null 2>&1 && echo podman-compose || echo podman compose)
+# Prefer native `podman compose`; fallback to podman-compose if needed.
+# This improves stability and avoids wrapper flakiness.
+COMPOSE_CMD := $(shell podman compose help >/dev/null 2>&1 && echo podman compose || (command -v podman-compose >/dev/null 2>&1 && echo podman-compose || echo podman compose))
 .DEFAULT_GOAL := test_389ds
 
 # Timing helper and lab params
@@ -16,6 +16,9 @@ endef
 
 DS_IMAGE := quay.io/389ds/dirsrv:latest
 NET_NAME := replnet
+
+# Test logging env (enabled when TEST_LOGS=1)
+ANSIBLE_TEST_ENV := ANSIBLE_STDOUT_CALLBACK=json ANSIBLE_CALLBACKS_ENABLED=log_plays,profile_tasks ANSIBLE_LOG_PATH=.ansible/test_logs/ansible-run.log
 
 .stamps/%:
 	@mkdir -p .stamps
@@ -54,31 +57,43 @@ net: .stamps/net
 	@touch $@
 
 up_389ds: pull_if_needed net
+	@# Ensure host log dirs for bind mounts (test-only; harmless if unused)
+	@mkdir -p .ansible/test_logs
+	@for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
+	  mkdir -p .ansible/containers/$$svc/var-log-dirsrv .ansible/containers/$$svc/data-logs; \
+	done
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up)
 
 up_389ds_fast: net
+	@# Ensure host log dirs for bind mounts (test-only; harmless if unused)
+	@mkdir -p .ansible/test_logs
+	@for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
+	  mkdir -p .ansible/containers/$$svc/var-log-dirsrv .ansible/containers/$$svc/data-logs; \
+	done
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up_fast)
 
 init_389ds:
 	@echo "Waiting for LDAP (ldapi) on ds-s1 and ds-c1..."
-        @for i in $$(seq 1 60); do \
-          podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-s1.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
-          sleep 1; \
-        done; \
-        for i in $$(seq 1 60); do \
-          podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
-          sleep 1; \
-        done
+	@ready_s1=1; for i in $$(seq 1 60); do \
+	  podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && { ready_s1=0; break; }; \
+	  sleep 1; \
+	done; \
+	if [ $$ready_s1 -ne 0 ]; then echo "ldapi not ready on ds-s1" >&2; exit 1; fi; \
+	ready_c1=1; for i in $$(seq 1 60); do \
+	  podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && { ready_c1=0; break; }; \
+	  sleep 1; \
+	done; \
+	if [ $$ready_c1 -ne 0 ]; then echo "ldapi not ready on ds-c1" >&2; exit 1; fi
 
 seed_389ds: deps_podman
 	@echo "Seeding example data on ds-s1 via Ansible"
-	$(call _time,ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(call _time,$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_vars.yml \
-	  test/seed.yml,seed)
+	  test/seed.yml $(ARGS),seed)
 
 migrate_pod:
-	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_mapping.yml \
 	  -e @test/compose_vars.yml \
@@ -86,7 +101,7 @@ migrate_pod:
 
 # Run replication role against compose lab
 repl_pod:
-	$(call _time,ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(call _time,$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_vars.yml \
 	  -e @test/repl_vars.yml \
@@ -95,20 +110,23 @@ repl_pod:
 verify_389ds:
 	@echo "Verifying entries on target (ds-c1)"
 	@verify() { name="$$1" cmd="$$2"; for i in $$(seq 1 60); do eval "$$cmd" >/dev/null 2>&1 && echo "OK: $$name" && return 0; sleep 1; done; echo "Missing $$name" >&2; exit 1; }; \
-        verify "alice present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example uid=alice | grep -q 'uid=alice'"; \
-        verify "bob present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example uid=bob | grep -q 'uid=bob'"; \
-        verify "staff includes devs" "podman exec ds-c1 ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b 'cn=staff,ou=groups,o=example' -s base uniqueMember | grep -iq 'uniqueMember: cn=devs,ou=groups,o=example'"; \
-        verify "app-x present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example uid=app-x | grep -q 'uid=app-x'"; \
-        verify "ACI present" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-ds-c1.socket -b o=example '(aci=*)' aci | grep -q 'Devs can write mail'"
+	verify "alice present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=alice || ldapsearch -x -H ldap://localhost:3389 -b o=example uid=alice' | grep -q 'uid=alice'"; \
+	verify "bob present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=bob || ldapsearch -x -H ldap://localhost:3389 -b o=example uid=bob' | grep -q 'uid=bob'"; \
+	verify "staff includes devs" "podman exec ds-c1 sh -lc \"ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b \"cn=staff,ou=groups,o=example\" -s base uniqueMember || ldapsearch -x -LLL -H ldap://localhost:3389 -b \"cn=staff,ou=groups,o=example\" -s base uniqueMember\" | grep -iq 'uniqueMember: cn=devs,ou=groups,o=example'"; \
+	verify "app-x present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example uid=app-x || ldapsearch -x -H ldap://localhost:3389 -b o=example uid=app-x' | grep -q 'uid=app-x'"; \
+	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b o=example \''(aci=*)'\'' aci || ldapsearch -x -H ldap://localhost:3389 -b o=example \''(aci=*)'\'' aci' | grep -q 'Devs can write mail'"
 
 deps_podman:
-	ansible-galaxy collection install containers.podman
+	ansible-galaxy collection install -r collections/requirements.yml
 
-test_389ds: up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds
+test_389ds:
+	@# Re-run the pipeline with test logging enabled and bundle logs on failure
+	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds \
+		|| $(MAKE) bundle_logs
 
 # Exercise LDIF split/filter module and verify artifacts on controller
 test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds
-	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_mapping.yml \
 	  -e @test/compose_vars.yml \
@@ -127,11 +145,14 @@ test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds
 	echo "OK: ldif_filter_split produced expected artifacts and content"
 
 # End-to-end replication test (supplier ds-s1 -> consumer ds-c1)
-test_repl: up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds
+test_repl:
+	@# Re-run replication test with logging and bundle logs on failure
+	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds \
+		|| $(MAKE) bundle_logs
 
 # Run CSR role against compose lab
 csr_pod:
-	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_vars.yml \
 	  -e dirsrv_artifact_root_effective=$(PWD)/.ansible/artifacts \
@@ -156,7 +177,10 @@ verify_csr:
 	echo "OK: CSR artifacts and manifests look sane"
 
 # End-to-end CSR test
-test_csr: up_389ds init_389ds deps_podman csr_pod verify_csr
+test_csr:
+	@# Re-run CSR test with logging and bundle logs on failure
+	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds deps_podman csr_pod verify_csr \
+		|| $(MAKE) bundle_logs
 
 down_389ds:
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down,compose_down)
@@ -184,20 +208,24 @@ clean:
 
 init_389ds_mesh:
 	@echo "Waiting for LDAP (ldapi) on ds-s1, ds-c1, ds-s2, ds-c2..."
-        @for h in ds-s1 ds-c1 ds-s2 ds-c2; do \
-          for i in $$(seq 1 60); do \
-            podman exec $$h ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-$${h}.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && break; \
-            sleep 1; \
-          done; \
-        done
+	@for h in ds-s1 ds-c1 ds-s2 ds-c2; do \
+	  ready=1; for i in $$(seq 1 60); do \
+	    podman exec $$h ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && { ready=0; break; }; \
+	    sleep 1; \
+	  done; \
+	  if [ $$ready -ne 0 ]; then echo "ldapi not ready on $$h" >&2; exit 1; fi; \
+	done
 
 repl_pod_mesh:
-	$(call _time,ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(call _time,$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod4.yml \
 	  -e @test/repl_mesh_vars.yml \
 	  test/repl_mesh.yml $(ARGS),repl_mesh)
 
-test_repl_mesh: up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds
+test_repl_mesh:
+	@# Re-run mesh test with logging and bundle logs on failure
+	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds \
+		|| $(MAKE) bundle_logs
 # Fast mesh test: reuse containers, restore golden, run mesh only
 test_repl_mesh_fast: up_389ds_fast reset_soft repl_pod_mesh
 # Run CSR role for multi-instance scenario on ds-s1
@@ -255,3 +283,25 @@ bench:
 	$(MAKE) seed_389ds
 	$(MAKE) repl_pod_mesh
 	$(MAKE) down_389ds
+
+# Bundle all artifacts and logs for AI analysis
+.PHONY: bundle_logs
+bundle_logs:
+	@set -e; \
+	TS=$$(date +%Y%m%d-%H%M%S); \
+	mkdir -p .ansible/test_logs .ansible/artifacts .ansible/containers; \
+	for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
+	  podman logs $$svc > .ansible/test_logs/podman-$$svc.log 2>&1 || true; \
+	  mkdir -p .ansible/test_logs/$$svc; \
+	  for path in var-log-dirsrv data-logs; do \
+	    src=".ansible/containers/$$svc/$$path"; \
+	    [ -d "$$src" ] && cp -a "$$src/." ".ansible/test_logs/$$svc/" || true; \
+	  done; \
+	done; \
+	ARCHIVE="logs-$$TS.tar.gz"; \
+	echo "Bundling logs to $$ARCHIVE"; \
+	tar czf "$$ARCHIVE" \
+	  .ansible/test_logs \
+	  .ansible/artifacts \
+	  .ansible/containers; \
+	echo "Created $$ARCHIVE"

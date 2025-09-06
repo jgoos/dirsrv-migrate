@@ -76,3 +76,15 @@ dirsrv_repl_require_unique_replica_ids: true
 # Lab-only features
 rhds_disable_referrals: false
 
+# Test-only observability switches (default off)
+# Enable with: -e dirsrv_debug=true -e dirsrv_log_capture=true
+dirsrv_debug: false
+dirsrv_log_capture: false
+
+# Artifact root for test snapshots (reuse repo standard defaults)
+dirsrv_artifact_root: "{{ playbook_dir }}/.ansible/artifacts"
+dirsrv_artifact_run: ""
+dirsrv_artifact_root_effective: >-
+  {{ ([dirsrv_artifact_root, dirsrv_artifact_run] | path_join)
+     if (dirsrv_artifact_run | default('') | length > 0)
+     else dirsrv_artifact_root }}
