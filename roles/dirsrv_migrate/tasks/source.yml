@@ -132,7 +132,7 @@
     backend: "{{ item.item }}"
     __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
     __raw_cmd: "{{ (res.cmd | default('')) | string }}"
-    __san_cmd: "{{ __raw_cmd }}"
+    __san_cmd: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
     __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
     __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
   ansible.builtin.copy:
