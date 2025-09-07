@@ -1,6 +1,48 @@
 ## Expects vars: retry_suffix, retry_agmt
 
-- name: Retry | Initialize agreement via module (with wait)
+- name: Retry | Check init-status for retry (online mode)
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt init-status --suffix "{{ retry_suffix }}" {{ retry_agmt }}
+  register: _repl_init_status_retry
+  changed_when: false
+  failed_when: false
+  no_log: true
+  throttle: 1
+
+- name: Retry | Check agreement status (JSON) for errors/mismatch
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -j
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - status
+      - --suffix
+      - "{{ retry_suffix }}"
+      - "{{ retry_agmt }}"
+  register: _repl_status_retry_json
+  changed_when: false
+  failed_when: false
+  no_log: true
+  throttle: 1
+
+- name: Retry | Backoff before retrying init (transient)
+  ansible.builtin.pause:
+    seconds: "{{ rhds_repl_retry_backoff | default(10) }}"
+  when: >-
+    (
+      (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+    ) or (
+      (_repl_status_retry_json.stdout | lower | default('')) is search('generation id|genid|mismatch|\"error\"\s*:\s*[^0]|initialized\"\s*:\s*false')
+    )
+  throttle: 1
+
+- name: Retry | Initialize agreement via module (with wait) on transient errors
   directories.ds.ds_repl_init:
     instance: "{{ dirsrv_repl_this_node.instance }}"
     suffix: "{{ retry_suffix }}"
@@ -11,3 +53,9 @@
     timeout: "{{ rhds_repl_retry_timeout | default(300) }}"
     poll_interval: "{{ rhds_repl_wait_delay | default(3) }}"
   throttle: 1
+  when: >-
+    (
+      (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+    ) or (
+      (_repl_status_retry_json.stdout | lower | default('')) is search('generation id|genid|mismatch|\"error\"\s*:\s*[^0]|initialized\"\s*:\s*false')
+    )
