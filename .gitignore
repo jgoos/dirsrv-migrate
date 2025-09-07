@@ -30,3 +30,6 @@ compose/*.override.yml
 logs-*.tar.gz
 .stamps/
 collections/ansible_collections/directories/ds/*.tar.gz
+## ansible-test local artifacts (never commit)
+collections/ansible_collections/**/tests/output/
+collections/ansible_collections/**/tests/output/**
