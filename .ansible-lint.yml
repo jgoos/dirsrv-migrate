@@ -1,6 +1,3 @@
-profiles:
-  - production
-
 exclude_paths:
   - .ansible/
   - collections/ansible_collections/**/molecule/**
@@ -10,6 +7,4 @@ skip_list:
   # Be pragmatic initially; tighten over time
   - var-naming
   - fqcn-builtins
-
-parseable: true
 

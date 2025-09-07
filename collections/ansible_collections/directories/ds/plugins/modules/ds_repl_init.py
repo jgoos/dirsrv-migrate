@@ -1,10 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from ansible.module_utils.basic import AnsibleModule
-import subprocess
-import time
-
+# Copyright: (c) 2025, Directory Services Team
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 DOCUMENTATION = r'''
 ---
@@ -48,7 +46,6 @@ options:
   dm_pw:
     description: Directory Manager password for remote connections.
     type: str
-    no_log: true
   op_timeout:
     description: Operation timeout seconds for dsconf calls.
     type: int
@@ -75,6 +72,10 @@ status:
   type: str
 '''
 
+
+from ansible.module_utils.basic import AnsibleModule
+import subprocess
+import time
 
 def _run(argv, timeout=60):
     return subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
@@ -147,4 +148,3 @@ def run_module():
 
 if __name__ == '__main__':
     run_module()
-

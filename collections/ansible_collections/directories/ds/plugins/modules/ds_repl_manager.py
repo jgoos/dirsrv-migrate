@@ -1,21 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from ansible.module_utils.basic import AnsibleModule
-import subprocess
-
-try:
-    from ansible_collections.directories.ds.plugins.module_utils import dsldap
-except Exception:  # pragma: no cover
-    import importlib.util
-    import sys
-    import pathlib
-    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
-    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
-    dsldap = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = dsldap
-    spec.loader.exec_module(dsldap)
-
+# Copyright: (c) 2025, Directory Services Team
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 DOCUMENTATION = r'''
 ---
@@ -30,7 +17,7 @@ options:
   instance: {description: Instance name, type: str, required: true}
   name: {description: Manager common name, type: str, default: replication manager}
   ensure: {description: Target state, type: str, choices: [present, absent], default: present}
-  password: {description: Desired password (when present), type: str, no_log: true}
+  password: {description: Desired password (when present), type: str}
   verify: {description: Attempt to verify password via bind before changing, type: bool, default: true}
   op_timeout: {description: Operation timeout seconds, type: int, default: 30}
 '''
@@ -53,6 +40,21 @@ dn:
   type: str
 '''
 
+
+from ansible.module_utils.basic import AnsibleModule
+import subprocess
+
+try:
+    from ansible_collections.directories.ds.plugins.module_utils import dsldap
+except Exception:  # pragma: no cover
+    import importlib.util
+    import sys
+    import pathlib
+    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
+    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
+    dsldap = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dsldap
+    spec.loader.exec_module(dsldap)
 
 def _ldapwhoami_try(url: str, dn: str, pw: str, timeout: int) -> bool:
     try:
@@ -141,4 +143,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
