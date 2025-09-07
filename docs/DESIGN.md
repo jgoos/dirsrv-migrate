@@ -208,7 +208,7 @@ We organize the automation in an Ansible project with inventory and roles to man
 │   └── all.yml
 ├── roles/
 │   ├── dirs389.instance/
-│   ├── dirs389.tls/
+│   ├── dirsrv_tls/
 │   ├── dirs389.replication/
 │   ├── dirs389.verify/
 │   └── dirs389.logs/
@@ -279,13 +279,13 @@ Key variables explained:
 
 Roles: We break out roles for clarity:
 	•	dirs389.instance: Tasks to ensure the DS instances are up and configured with basic settings (creating suffix if not already present, setting schema or id2entry settings if needed, ensuring Directory Manager password is set – though in our case it’s done via env).
-	•	dirs389.tls: Tasks to set up the Certificate Authority and issue server certificates, and configure each DS instance to trust the CA and use its server cert for LDAPS.
+	•	dirsrv_tls: Tasks to set up the Certificate Authority and issue server certificates, and configure each DS instance to trust the CA and use its server cert for LDAPS.
 	•	dirs389.replication: Tasks to configure replication: enable the replication plugin on each instance (with the correct role and replica ID) and set up replication agreements between the appropriate pairs. This role will use the topology variable to decide which agreements to create.
 	•	dirs389.verify: Tasks to verify that replication is working (e.g., check that each supplier and consumer has the expected RUV, possibly create a test entry on one supplier and see if it appears on others).
 	•	dirs389.logs: (Optional) Tasks to adjust log settings on each instance (like setting log level or rotation policy) and to collect logs.
 
 Playbooks: We foresee separate playbooks for different phases:
-	•	provision.yml: Bring up the containers (maybe call out to Podman Compose via ansible.builtin.command) and run the instance and tls roles to initialize everything. For example, this playbook might have a block that waits for the container health checks (or explicitly uses our wait script) then includes dirs389.tls.
+	•	provision.yml: Bring up the containers (maybe call out to Podman Compose via ansible.builtin.command) and run the instance and tls roles to initialize everything. For example, this playbook might have a block that waits for the container health checks (or explicitly uses our wait script) then includes dirsrv_tls.
 	•	replicate.yml: Run the dirs389.replication role to create replication agreements and initialize replicas.
 	•	verify.yml: Run dirs389.verify to perform post-setup checks (and possibly run any test cases or assertions).
 	•	collect_logs.yml: Run dirs389.logs or otherwise gather logs into an artifact.
@@ -353,7 +353,7 @@ dsconf -D "cn=Directory Manager" ldap://s1.dsnet.test config replace nsSSLClient
 
 The above ensures LDAPS is enabled on port 636 and the server will use the cert we imported. nsSSLClientAuth=allowed means client certificates are not required (default). We then restart the instance (or use dsctl restart) for changes to take effect.
 
-All these steps will be encapsulated in the dirs389.tls Ansible role. After this, each server will accept LDAPS connections on 636 with our issued cert, and each server will trust the CA – so they will trust each other’s certs as well, since all were issued by the same CA. This is critical for replication: if s1 connects to s2 over LDAPS, s1 (acting as an LDAP client) needs to trust s2’s cert. By importing the CA on every server’s NSS DB (which is used for both server and client operations in 389DS), we satisfy that. This approach avoids the pitfalls of self-signed certs per host (which would require either disabling cert verification or manually trusting each other’s certs) ￼ ￼. Using a single CA is the recommended way in multi-server setups to ensure mutual trust.
+All these steps will be encapsulated in the dirsrv_tls Ansible role. After this, each server will accept LDAPS connections on 636 with our issued cert, and each server will trust the CA – so they will trust each other’s certs as well, since all were issued by the same CA. This is critical for replication: if s1 connects to s2 over LDAPS, s1 (acting as an LDAP client) needs to trust s2’s cert. By importing the CA on every server’s NSS DB (which is used for both server and client operations in 389DS), we satisfy that. This approach avoids the pitfalls of self-signed certs per host (which would require either disabling cert verification or manually trusting each other’s certs) ￼ ￼. Using a single CA is the recommended way in multi-server setups to ensure mutual trust.
 
 We will provide a script or role to generate the CA and server certs. For simplicity, we might generate them on the macOS host or Podman VM and then use ansible.builtin.copy or the shared volume to distribute them to containers. The certificate role also will likely call certutil and pk12util via Ansible’s command module (executing inside the container – possibly using the Podman connection or via podman exec). Since these tools might not be in PATH of the running container by default, we may have to install the nss-tools package inside the container or rely on dsconf security certificate add. Notably, 389 DS now has a command to add certificates from files:
 

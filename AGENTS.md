@@ -19,7 +19,7 @@
   - `defaults/main.yml`: Default vars (override in inventory/group_vars)
   - `templates/`: (if used) keep Jinja2 minimal
 - `roles/dirsrv_repl/`: Replication role (enable, agreements, init, wait/monitor)
-- `roles/dirs389.tls/`: TLS helper role for DS instances
+- `roles/dirsrv_tls/`: TLS helper role for DS instances
 - `roles/dirsrv_tls_csr/`: CSR generation scenarios (lab/testing)
 - `ansible.cfg`: Local config (e.g., `roles_path = roles`).
 - `.ansible/`: Local collections/modules workspace (optional).

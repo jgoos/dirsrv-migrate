@@ -190,11 +190,11 @@ tasks:
     acceptance_criteria:
       - All plays and roles operate on `dc=example,dc=com`; no stray `o=example` remain.
 
-  - title: "TLS: Implement dirs389.tls role (CA trust, server cert import, LDAPS enable)"
+  - title: "TLS: Implement dirsrv_tls role (CA trust, server cert import, LDAPS enable)"
     status: fixed
     priority: P0
     prompt: |
-      Create a new role `roles/dirs389.tls` (or extend an existing TLS role) to:
+      Create a new role `roles/dirsrv_tls` (or extend an existing TLS role) to:
       1) Import lab CA into each instance's NSS DB (trust flags CT,C,C).
       2) Import per-host server certificate and key; set nickname equal to FQDN (e.g., `s1.dsnet.test`).
       3) Enable TLS by configuring:
@@ -203,9 +203,9 @@ tasks:
       4) Restart the instance (dsctl <inst> restart).
       Use LDAPI with `-Y EXTERNAL` where possible. Inputs can be CSR artifacts signed by a local CA or prebuilt test certs.
     files_to_add:
-      - roles/dirs389.tls/tasks/main.yml
+      - roles/dirsrv_tls/tasks/main.yml
     snippets:
-      - path: roles/dirs389.tls/tasks/main.yml
+      - path: roles/dirsrv_tls/tasks/main.yml
         language: yaml
         content: |
           ---
