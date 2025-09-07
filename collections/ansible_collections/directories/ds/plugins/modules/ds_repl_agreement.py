@@ -6,7 +6,9 @@ from ansible.module_utils.basic import AnsibleModule
 try:
     from ansible_collections.directories.ds.plugins.module_utils import dsldap
 except Exception:  # pragma: no cover
-    import importlib.util, sys, pathlib
+    import importlib.util
+    import sys
+    import pathlib
     _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
     spec = importlib.util.spec_from_file_location('dsldap', str(_p))
     dsldap = importlib.util.module_from_spec(spec)
@@ -246,4 +248,3 @@ def run_module():
 
 if __name__ == '__main__':
     run_module()
-
