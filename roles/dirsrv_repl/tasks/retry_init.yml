@@ -8,11 +8,40 @@
   register: _repl_init_status_retry
   changed_when: false
   failed_when: false
+  no_log: true
+  throttle: 1
+
+- name: Retry | Check agreement status (JSON) for errors/mismatch
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -j
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - status
+      - --suffix
+      - "{{ retry_suffix }}"
+      - "{{ retry_agmt }}"
+  register: _repl_status_retry_json
+  changed_when: false
+  failed_when: false
+  no_log: true
+  throttle: 1
 
 - name: Retry | Backoff before retrying init (transient)
   ansible.builtin.pause:
     seconds: "{{ rhds_repl_retry_backoff | default(10) }}"
-  when: (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+  when: >-
+    (
+      (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+    ) or (
+      (_repl_status_retry_json.stdout | lower | default('')) is search('generation id|genid|mismatch|"error"\s*:\s*[^0]|initialized"\s*:\s*false')
+    )
+  throttle: 1
 
 - name: Retry | Re-run online init once on transient errors
   ansible.builtin.command: >-
@@ -21,7 +50,14 @@
   register: _repl_agmt_reinit
   changed_when: _repl_agmt_reinit.rc == 0
   failed_when: false
-  when: (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+  no_log: true
+  when: >-
+    (
+      (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
+    ) or (
+      (_repl_status_retry_json.stdout | lower | default('')) is search('generation id|genid|mismatch|"error"\s*:\s*[^0]|initialized"\s*:\s*false')
+    )
+  throttle: 1
 
 - name: Retry | Poll init-status after retry (online mode)
   vars:
@@ -37,3 +73,4 @@
   retries: "{{ max_tries }}"
   delay: 5
   when: (_repl_agmt_reinit is defined) and ((_repl_agmt_reinit.rc | default(1)) == 0)
+  throttle: 1

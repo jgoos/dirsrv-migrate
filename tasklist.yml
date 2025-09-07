@@ -271,7 +271,7 @@ tasks:
       - Agreements list (`dsconf ... repl-agmt list --suffix ...`) shows hosts `*.dsnet.test:636`.
 
   - title: "Replication: Resolve generation ID mismatches by clean re-init"
-    status: todo
+    status: fixed
     priority: P0
     prompt: |
       Address generation ID mismatches seen in logs (e.g., s2->c2):

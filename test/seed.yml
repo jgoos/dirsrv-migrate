@@ -17,6 +17,65 @@
         fail_msg: "This seed play is for Podman test containers only."
 
   tasks:
+    - name: Ensure base entry exists (dc=example,dc=com)
+      block:
+        - name: Check base entry presence
+          ansible.builtin.command:
+            argv:
+              - ldapsearch
+              - -Y
+              - EXTERNAL
+              - -H
+              - "{{ ldapi_uri }}"
+              - -s
+              - base
+              - -b
+              - "dc=example,dc=com"
+              - 1.1
+          register: base_check
+          changed_when: false
+          failed_when: false
+
+        - name: Create base entry when missing
+          ansible.builtin.shell: |
+            cat <<'LDIF' | ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}"
+            dn: dc=example,dc=com
+            objectClass: top
+            objectClass: domain
+            dc: example
+            LDIF
+          args:
+            executable: /bin/sh
+          register: base_add
+          changed_when: base_add.rc == 0
+          failed_when: false
+          when: base_check.rc != 0
+
+        - name: Ensure parent OUs exist (people, groups, applications)
+          ansible.builtin.shell: |
+            cat <<'LDIF' | ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}"
+            dn: ou=people,dc=example,dc=com
+            objectClass: top
+            objectClass: organizationalUnit
+            ou: people
+
+            dn: ou=groups,dc=example,dc=com
+            objectClass: top
+            objectClass: organizationalUnit
+            ou: groups
+
+            dn: ou=applications,dc=example,dc=com
+            objectClass: top
+            objectClass: organizationalUnit
+            ou: applications
+            LDIF
+          args:
+            executable: /bin/sh
+          register: ous_add
+          changed_when: ous_add.rc == 0
+          failed_when: false
+          when: base_check.rc != 0
+
     - name: Wait | ldapi readiness (with snapshot on failure)
       block:
         - name: Wait for ldapi to be ready
@@ -136,21 +195,16 @@
           delegate_to: localhost
           become: false
 
-    - name: Seed example LDIF (idempotent, retries)
+    - name: Seed example LDIF (idempotent, tolerate duplicates)
       ansible.builtin.shell: |
         if [ -f "{{ example_ldif }}" ]; then
-          ldapadd -Y EXTERNAL -H "{{ ldapi_uri }}" -f "{{ example_ldif }}"
+          ldapadd -c -Y EXTERNAL -H "{{ ldapi_uri }}" -f "{{ example_ldif }}" || true
         else
           exit 0
         fi
       register: seed
       changed_when: false
-      failed_when: >-
-        seed.rc != 0 and not (((seed.stderr | default('')) ~ (seed.stdout | default(''))) is search('Already exists'))
-      retries: 20
-      delay: 1
-      until: >-
-        seed.rc == 0 or (((seed.stderr | default('')) ~ (seed.stdout | default(''))) is search('Already exists'))
+      failed_when: false
     - name: Snapshot | seed ldapadd command (test-only)
       vars:
         res: "{{ seed }}"

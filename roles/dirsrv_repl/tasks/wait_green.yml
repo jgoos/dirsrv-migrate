@@ -20,6 +20,11 @@
         )
       }}
 
+- name: Wait | Ensure artifact root fact (fallback)
+  ansible.builtin.set_fact:
+    dirsrv_artifact_root_effective: "{{ [playbook_dir, '.ansible', 'artifacts'] | path_join }}"
+  when: dirsrv_artifact_root_effective is not defined
+
 - name: Wait | Agreements healthy (with snapshot on failure)
   block:
     - name: Wait | Until each local agreement is healthy
@@ -28,31 +33,25 @@
         agmt: "{{ item.1 }}"
         tries: "{{ rhds_repl_wait_max_retries | default(120) }}"
         delay: "{{ rhds_repl_wait_delay | default(3) }}"
+        suffix_dn_esc: "cn={{ agmt_suffix | replace('=','\\3D') }},cn=mapping tree,cn=config"
+        agmt_dn: "cn={{ agmt.name }},cn=replica,{{ suffix_dn_esc }}"
+        __ldap_auth: >-
+          {{ ['-Y','EXTERNAL'] if (dirsrv_repl_conn_url | default('') | regex_search('^ldapi://')) else ['-x','-D', dirsrv_dm_dn, '-w', dirsrv_password] }}
+        __argv: >-
+          {{ ['ldapsearch'] + __ldap_auth + ['-LLL','-H', dirsrv_repl_conn_url, '-s','base','-b', agmt_dn,
+              'nsds5replicaLastInitStatusJSON','nsds5replicaLastUpdateStatusJSON','nsDS5ReplicaUpdateInProgress'] }}
       ansible.builtin.command:
-        argv:
-          - dsconf
-          - -D
-          - "{{ dirsrv_dm_dn }}"
-          - -w
-          - "{{ dirsrv_password }}"
-          - "{{ dirsrv_repl_conn_url }}"
-          - -j
-          - repl-agmt
-          - status
-          - --suffix
-          - "{{ agmt_suffix }}"
-          - "{{ agmt.name }}"
+        argv: "{{ __argv }}"
       register: out
       no_log: true
       changed_when: false
       failed_when: false
       until: >-
         (
-          out.stdout is search('"error"\s*:\s*0') or
-          out.stdout is search('"initialized"\s*:\s*true') or
-          out.stdout is search('successfully initialized')
+          (out.stdout | default('')) is search('"error"\s*:\s*0') or
+          (out.stdout | default('')) is search('Total update succeeded|Incremental update succeeded|Replica acquired successfully|successfully initialized')
         )
-        and not (out.stdout | lower | default('')) is search('in progress')
+        and not ((out.stdout | default('') | lower) is search('updateinprogress: true'))
       retries: "{{ tries }}"
       delay: "{{ delay }}"
       with_subelements:
@@ -63,7 +62,7 @@
   rescue:
     - name: Snapshot | Ensure local artifacts dir exists (controller)
       ansible.builtin.file:
-        path: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+        path: "{{ [dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join), inventory_hostname] | path_join }}"
         state: directory
         mode: "0750"
       connection: local
@@ -75,7 +74,7 @@
         res: "{{ item }}"
         suffix: "{{ item.item.0.key | default('') }}"
         agree: "{{ item.item.1.name | default('') }}"
-        __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+        __snap_dir: "{{ [dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join), inventory_hostname] | path_join }}"
         __raw_cmd: "{{ (res.cmd | default('')) | string }}"
         __san_cmd: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
         __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"

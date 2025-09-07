@@ -319,5 +319,6 @@ bundle_logs:
 	tar czf "$$ARCHIVE" \
 	  .ansible/test_logs \
 	  .ansible/artifacts \
-	  .ansible/containers; \
+	  .ansible/containers \
+	  test/.ansible/artifacts 2>/dev/null || true; \
 	echo "Created $$ARCHIVE"
