@@ -225,3 +225,7 @@ def run_module():
 
     module.fail_json(msg="Agreements not healthy within timeout", reason="timeout", observations=last_obs, hints=sorted(set(hints)))
 
+
+if __name__ == '__main__':
+    run_module()
+

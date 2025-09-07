@@ -243,3 +243,7 @@ def run_module():
         backoff_min=p.get('backoff_min'), backoff_max=p.get('backoff_max'), purge_delay=p.get('purge_delay'), compression=p.get('compression')
     ), warnings=warnings)
 
+
+if __name__ == '__main__':
+    run_module()
+
