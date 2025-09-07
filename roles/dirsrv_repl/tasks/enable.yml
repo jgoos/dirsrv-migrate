@@ -417,75 +417,29 @@
       )
 
 - name: Enable | Ensure replication manager exists (SIMPLE)
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    replication create-manager --name "replication manager" --passwd "{{ dirsrv_repl_auth.bind_password }}"
-  register: dirsrv_repl_create_mgr
+  directories.ds.ds_repl_manager:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    name: "replication manager"
+    password: "{{ dirsrv_repl_auth.bind_password }}"
+    verify: true
   no_log: true
-  changed_when: >-
-    dirsrv_repl_create_mgr.rc == 0 and (
-      'Successfully created replication manager' in (dirsrv_repl_create_mgr.stdout | default(''))
-    )
-  failed_when: >-
-    dirsrv_repl_create_mgr.rc != 0 and (
-      'already exists' not in ((dirsrv_repl_create_mgr.stdout | lower | default('')) + ' ' + (dirsrv_repl_create_mgr.stderr | lower | default('')))
-    )
   when:
     - dirsrv_repl_auth.method == 'SIMPLE'
     - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
 
-- name: Enable | Ensure replication manager password matches (SIMPLE, LDAPI EXTERNAL)
-  ansible.builtin.shell: |
-    cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn=replication manager,cn=config
-    changetype: modify
-    replace: userPassword
-    userPassword: {{ dirsrv_repl_auth.bind_password }}
-    LDIF
-  args:
-    executable: /bin/sh
-  register: dirsrv_repl_mgr_pwd
-  no_log: true
-  changed_when: false
-  failed_when: false
-  when:
-    - dirsrv_repl_auth.method == 'SIMPLE'
-    - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
-    - dirsrv_ldapi_uri | default('') | length > 0
+## Password ensured by ds_repl_manager above
 
-- name: Enable | Ensure replication manager password matches (SIMPLE, DM bind)
-  ansible.builtin.shell: |
-    cat <<'LDIF' | ldapmodify -x -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" -H "{{ dirsrv_repl_conn_url }}"
-    dn: cn=replication manager,cn=config
-    changetype: modify
-    replace: userPassword
-    userPassword: {{ dirsrv_repl_auth.bind_password }}
-    LDIF
-  args:
-    executable: /bin/sh
-  register: dirsrv_repl_mgr_pwd_dm
-  no_log: true
-  changed_when: false
-  failed_when: false
-  when:
-    - dirsrv_repl_auth.method == 'SIMPLE'
-    - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
-    - dirsrv_ldapi_uri | default('') | length == 0
+## Password ensured by ds_repl_manager above
 
 - name: Enable | Authorize inbound supplier bind DN(s) on this node
   vars:
     suffix: "{{ item.0.key }}"
     agree: "{{ item.1 }}"
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    replication set --suffix "{{ suffix }}" --repl-add-bind-dn "{{ dirsrv_repl_auth.bind_dn }}"
-  register: dirsrv_repl_add_binddn
-  no_log: true
-  changed_when: >-
-    dirsrv_repl_add_binddn.rc == 0 and (
-      'Successfully updated replication configuration' in (dirsrv_repl_add_binddn.stdout | default(''))
-    )
-  failed_when: false
+  directories.ds.ds_repl_binddn_auth:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ suffix }}"
+    bind_dn: "{{ dirsrv_repl_auth.bind_dn }}"
+    state: present
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -494,16 +448,11 @@
     - agree.to == inventory_hostname
 
 - name: Enable | Ensure inbound bind DN present on this node for each suffix (SIMPLE)
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    replication set --suffix "{{ item }}" --repl-add-bind-dn "{{ dirsrv_repl_auth.bind_dn }}"
-  register: dirsrv_repl_add_binddn_suffix
-  no_log: true
-  changed_when: >-
-    dirsrv_repl_add_binddn_suffix.rc == 0 and (
-      'Successfully updated replication configuration' in (dirsrv_repl_add_binddn_suffix.stdout | default(''))
-    )
-  failed_when: false
+  directories.ds.ds_repl_binddn_auth:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ item }}"
+    bind_dn: "{{ dirsrv_repl_auth.bind_dn }}"
+    state: present
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
     - dirsrv_repl_auth.method == 'SIMPLE'
