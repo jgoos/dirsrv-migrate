@@ -3,7 +3,7 @@
   hosts: ds-s2,ds-c1,ds-c2
   gather_facts: false
   vars:
-    targets: ["ds-s1:389", "ds-s2:389"]
+    targets: ["ds-s1:3389", "ds-s2:3389"]
   tasks:
     - name: Wait for LDAP TCP on {{ item }}
       ansible.builtin.command:
@@ -14,6 +14,27 @@
       retries: 60
       delay: 3
       loop: "{{ targets }}"
+
+- name: Preflight | Local LDAP readiness on all nodes
+  hosts: all
+  gather_facts: false
+  tasks:
+    - block:
+        - name: Check local ldap://localhost:3389 is responsive
+          ansible.builtin.command:
+            argv: [ldapsearch, -x, -H, ldap://localhost:3389, -s, base, -b, '', 1.1]
+          register: local_ldap
+          changed_when: false
+          retries: 60
+          delay: 2
+          until: local_ldap.rc == 0
+      rescue:
+        - name: Show local LDAP error
+          ansible.builtin.debug:
+            var: local_ldap
+        - name: Fail preflight
+          ansible.builtin.fail:
+            msg: "Local LDAP not responsive on {{ inventory_hostname }}:3389"
 
 - name: Configure mesh replication (2 suppliers, 2 consumers)
   hosts: all
@@ -33,14 +54,14 @@
   tasks:
     - name: Check changelog presence
       ansible.builtin.command:
-        argv: [ldapsearch, -x, -H, ldap://localhost:389, -s, base, -b, cn=changelog, 1.1]
+        argv: [ldapsearch, -x, -H, ldap://localhost:3389, -s, base, -b, cn=changelog, 1.1]
       register: s_cl
       changed_when: false
       failed_when: false
 
     - name: Ensure changelog exists (set-changelog)
       ansible.builtin.command:
-        argv: [dsconf, -j, -H, ldap://localhost:389, ldap, -D, "cn=Directory Manager", -w, password, replication, set-changelog, --suffix, dc=example,dc=com, --max-age, 7d]
+        argv: [dsconf, -j, -H, ldap://localhost:3389, ldap, -D, "cn=Directory Manager", -w, password, replication, set-changelog, --suffix, dc=example,dc=com, --max-age, 7d]
       register: s_cl_set
       changed_when: s_cl_set.rc == 0
       failed_when: false
@@ -56,7 +77,7 @@
           - -w
           - password
           - -H
-          - "ldap://localhost:389"
+          - "ldap://localhost:3389"
           - -b
           - "{{ agmt_dn }}"
           - -s
@@ -87,7 +108,7 @@
           - dsconf
           - -j
           - -H
-          - "ldap://{{ inventory_hostname }}:389"
+          - "ldap://{{ inventory_hostname }}:3389"
           - ldap
           - -D
           - "cn=Directory Manager"
@@ -116,7 +137,7 @@
         argv:
           - dsconf
           - -H
-          - "ldap://{{ inventory_hostname }}:389"
+          - "ldap://{{ inventory_hostname }}:3389"
           - ldap
           - -D
           - "cn=Directory Manager"
@@ -141,7 +162,7 @@
           - dsconf
           - -j
           - -H
-          - "ldap://{{ inventory_hostname }}:389"
+          - "ldap://{{ inventory_hostname }}:3389"
           - ldap
           - -D
           - "cn=Directory Manager"
@@ -259,7 +280,7 @@
           - ldapsearch
           - -x
           - -H
-          - "ldap://ds-s2:389"
+          - "ldap://ds-s2:3389"
           - -b
           - "{{ test_dn }}"
           - -s
@@ -350,7 +371,7 @@
               - ldapsearch
               - -x
               - -H
-              - "ldap://{{ inventory_hostname }}:389"
+              - "ldap://{{ inventory_hostname }}:3389"
               - -b
               - "{{ test_dn }}"
               - -s
@@ -386,19 +407,19 @@
 
         - name: RCA | replication agreements (list)
           ansible.builtin.command:
-            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:389", ldap, -D, "cn=Directory Manager", -w, password, replication, list]
+            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:3389", ldap, -D, "cn=Directory Manager", -w, password, replication, list]
           register: rca_list
           changed_when: false
           failed_when: false
         - name: RCA | replication monitor
           ansible.builtin.command:
-            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:389", ldap, -D, "cn=Directory Manager", -w, password, replication, monitor]
+            argv: [dsconf, -j, -H, "ldap://{{ inventory_hostname }}:3389", ldap, -D, "cn=Directory Manager", -w, password, replication, monitor]
           register: rca_mon
           changed_when: false
           failed_when: false
         - name: RCA | agreements status (s1->c1) (bind-aware)
           ansible.builtin.command:
-            argv: [dsconf, -j, -H, "ldap://ds-s1:389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, dc=example,dc=com, s1-to-c1]
+            argv: [dsconf, -j, -H, "ldap://ds-s1:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, dc=example,dc=com, s1-to-c1]
           register: rca_status_s1c1
           changed_when: false
           failed_when: false
@@ -406,7 +427,7 @@
 
         - name: RCA | agreements status s2->c2 (bind-aware)
           ansible.builtin.command:
-            argv: [dsconf, -j, -H, "ldap://ds-s2:389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, dc=example,dc=com, s2-to-c2]
+            argv: [dsconf, -j, -H, "ldap://ds-s2:3389", ldap, -D, "cn=Directory Manager", -w, password, repl-agmt, status, --suffix, dc=example,dc=com, s2-to-c2]
           register: rca_status_s2c2
           changed_when: false
           failed_when: false
@@ -429,21 +450,21 @@
 
         - name: RCA | namingContexts
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:389", -s, base, -b, '', namingContexts]
+            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, base, -b, '', namingContexts]
           register: rca_nc
           changed_when: false
           failed_when: false
 
         - name: RCA | changelog (suppliers only)
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:389", -s, one, -b, cn=changelog, 1.1]
+            argv: [ldapsearch, -x, -H, "ldap://{{ inventory_hostname }}:3389", -s, one, -b, cn=changelog, 1.1]
           register: rca_cl
           changed_when: false
           failed_when: false
           when: inventory_hostname in ['ds-s1','ds-s2']
         - name: RCA | supplier→consumer connectivity (s2→c2)
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:389", -s, base, -b, '', 1.1]
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, '', 1.1]
           register: rca_conn_s2c2
           changed_when: false
           failed_when: false
@@ -451,28 +472,28 @@
 
         - name: RCA | agreement entry s2->c2 on supplier
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:389", -s, base, -b, 'cn=s2-to-c2,cn=replica,cn=dc\3Dexample\2Cdc\3Dcom,cn=mapping tree,cn=config', nsDS5ReplicaHost, nsDS5ReplicaPort, nsDS5ReplicaBindDN, nsDS5ReplicaTransportInfo]
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, base, -b, 'cn=s2-to-c2,cn=replica,cn=dc\3Dexample\2Cdc\3Dcom,cn=mapping tree,cn=config', nsDS5ReplicaHost, nsDS5ReplicaPort, nsDS5ReplicaBindDN, nsDS5ReplicaTransportInfo]
           register: rca_agmt_entry
           changed_when: false
           failed_when: false
 
         - name: RCA | consumer replica entry on c2
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:389", -s, base, -b, 'cn=replica,cn=dc\3Dexample\2Cdc\3Dcom,cn=mapping tree,cn=config', nsDS5ReplicaType, nsDS5ReplicaRoot, nsDS5ReplicaId, nsDS5Flags]
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-c2:3389", -s, base, -b, 'cn=replica,cn=dc\3Dexample\2Cdc\3Dcom,cn=mapping tree,cn=config', nsDS5ReplicaType, nsDS5ReplicaRoot, nsDS5ReplicaId, nsDS5Flags]
           register: rca_consumer_replica
           changed_when: false
           failed_when: false
 
         - name: RCA | suppliers changelog presence (s2)
           ansible.builtin.command:
-            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:389", -s, one, -b, cn=changelog, 1.1]
+            argv: [ldapsearch, -x, -D, "cn=Directory Manager", -w, password, -H, "ldap://ds-s2:3389", -s, one, -b, cn=changelog, 1.1]
           register: rca_cl_s2
           changed_when: false
           failed_when: false
 
         - name: RCA | RUV on s2 and c2
           ansible.builtin.command:
-            argv: [bash, -lc, "ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-s2:389 -s base -b 'cn=replica,cn=dc\\3Dexample\\2Cdc\\3Dcom,cn=mapping tree,cn=config' nsds50ruv; echo '---'; ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-c2:389 -s base -b 'cn=replica,cn=dc\\3Dexample\\2Cdc\\3Dcom,cn=mapping tree,cn=config' nsds50ruv"]
+            argv: [bash, -lc, "ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-s2:3389 -s base -b 'cn=replica,cn=dc\\3Dexample\\2Cdc\\3Dcom,cn=mapping tree,cn=config' nsds50ruv; echo '---'; ldapsearch -x -D 'cn=Directory Manager' -w password -H ldap://ds-c2:3389 -s base -b 'cn=replica,cn=dc\\3Dexample\\2Cdc\\3Dcom,cn=mapping tree,cn=config' nsds50ruv"]
           register: rca_ruv
           changed_when: false
           failed_when: false
@@ -494,3 +515,29 @@
               cl_s2={{ rca_cl_s2.stdout | default('') }}
               ruv={{ rca_ruv.stdout | default('') }}
           failed_when: true
+
+- name: Log scan | No generation ID mismatch warnings in DS errors log
+  hosts: ds-s1,ds-s2,ds-c1,ds-c2
+  gather_facts: false
+  vars:
+    _default_log_root: "/var/log/dirsrv"
+  tasks:
+    - name: Detect instance log dir
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for d in /var/log/dirsrv/slapd-*; do [ -d "$d" ] && { echo "$d"; exit 0; }; done; echo "/var/log/dirsrv"; exit 0
+      register: logdir
+      changed_when: false
+      failed_when: false
+
+    - name: Assert errors log has no genID mismatch warnings
+      ansible.builtin.shell: |
+        set -euo pipefail
+        grep -Ei 'gen(eration)?\s*id.*mismatch|genid.*mismatch' "${LOGDIR}/errors" && exit 10 || exit 0
+      args:
+        executable: /bin/bash
+      environment:
+        LOGDIR: "{{ (logdir.stdout | default(_default_log_root)) | trim }}"
+      register: genid_warn
+      changed_when: false
+      failed_when: genid_warn.rc == 10

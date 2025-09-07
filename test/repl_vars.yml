@@ -7,13 +7,13 @@ dirsrv_repl_nodes:
     role: supplier
     instance: "localhost"
     host: "s1.dsnet.test"
-    port: 389
+    port: 3389
     protocol: LDAP
   ds-c1:
     role: consumer
     instance: "localhost"
     host: "c1.dsnet.test"
-    port: 389
+    port: 3389
     protocol: LDAP
 
 dirsrv_repl_suffixes:
@@ -25,7 +25,7 @@ dirsrv_repl_replica_ids:
 
 dirsrv_repl_auth:
   method: SIMPLE
-  bind_dn: "cn=replication manager,cn=config"
+  bind_dn: "cn=Directory Manager"
   bind_password: "{{ dirsrv_password }}"
 
 dirsrv_repl_agreements:

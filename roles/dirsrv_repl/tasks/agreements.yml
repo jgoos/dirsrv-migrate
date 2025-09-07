@@ -14,6 +14,36 @@
   when:
     - item.1.from == inventory_hostname
 
+- name: Preflight | Verify remote accepts manager bind (SIMPLE)
+  vars:
+    agree: "{{ item.1 }}"
+    target: "{{ dirsrv_repl_nodes[agree.to] }}"
+    _proto: "{{ target.protocol | lower }}"
+    _url: "{{ _proto }}://{{ target.host }}:{{ target.port }}"
+    max_tries: 60
+  ansible.builtin.command:
+    argv:
+      - ldapwhoami
+      - -x
+      - -D
+      - "{{ dirsrv_repl_auth.bind_dn }}"
+      - -w
+      - "{{ dirsrv_repl_auth.bind_password }}"
+      - -H
+      - "{{ _url }}"
+  register: dirsrv_repl_remote_bind
+  changed_when: false
+  failed_when: false
+  until: dirsrv_repl_remote_bind.rc == 0
+  retries: "{{ max_tries }}"
+  delay: 2
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_auth.method == 'SIMPLE'
+
 - name: Agreements | List existing agreements for suffix
   vars:
     suffix: "{{ item.0.key }}"
@@ -102,7 +132,8 @@
       - --conn-protocol
       - "{{ target.protocol }}"
     dirsrv_repl_agmt_cmd_bind: "{{ ['--bind-dn', dirsrv_repl_auth.bind_dn, '--bind-passwd', dirsrv_repl_auth.bind_password, '--bind-method', 'SIMPLE'] if dirsrv_repl_auth.method == 'SIMPLE' else ['--bind-method', 'SSLCLIENTAUTH'] }}"
-    dirsrv_repl_agmt_cmd_init: "{{ ['--init'] if (agree.init | default(false)) and (dirsrv_repl_init_mode == 'online') else [] }}"
+    # Stagger flow: create agreements first without --init; run init later, serially
+    dirsrv_repl_agmt_cmd_init: []
   ansible.builtin.command:
     argv: "{{ dirsrv_repl_agmt_cmd_base + dirsrv_repl_agmt_cmd_bind + dirsrv_repl_agmt_cmd_init + [agree.name] }}"
   register: dirsrv_repl_agmt_create
@@ -237,6 +268,29 @@
     - item.1.from == inventory_hostname
     - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
 
+- name: Agreements | Ensure bind credentials/method (SIMPLE)
+  vars:
+    suffix: "{{ item.0.key }}"
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt set {{ item.1.name }} --suffix "{{ suffix }}"
+    --bind-dn "{{ dirsrv_repl_auth.bind_dn }}" --bind-passwd "{{ dirsrv_repl_auth.bind_password }}" --bind-method SIMPLE
+  register: dirsrv_repl_agmt_bind
+  changed_when: >-
+    dirsrv_repl_agmt_bind.rc == 0 and (
+      'updated' in (dirsrv_repl_agmt_bind.stdout | lower | default('')) or
+      'modified' in (dirsrv_repl_agmt_bind.stdout | lower | default(''))
+    )
+  failed_when: dirsrv_repl_agmt_bind.rc != 0
+  no_log: true
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_auth.method == 'SIMPLE'
+    - not ansible_check_mode
+
 - name: Snapshot | Agreement fractional/strip set results (test-only)
   vars:
     res: "{{ item }}"
@@ -281,6 +335,7 @@
     (dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized')
   retries: "{{ max_tries }}"
   delay: 5
+  throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -327,6 +382,57 @@
   vars:
     retry_suffix: "{{ item.0.key }}"
     retry_agmt: "{{ item.1.name }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_init_mode == 'online'
+    - (item.1.init | default(false)) | bool
+    - not ansible_check_mode
+
+- name: Agreements | Force clean re-init (final)
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - init
+      - --suffix
+      - "{{ item.0.key }}"
+      - "{{ item.1.name }}"
+  register: dirsrv_repl_final_init
+  changed_when: dirsrv_repl_final_init.rc == 0
+  failed_when: false
+  no_log: true
+  throttle: 1
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_init_mode == 'online'
+    - (item.1.init | default(false)) | bool
+    - not ansible_check_mode
+
+- name: Agreements | Poll init-status after final re-init
+  vars:
+    max_tries: 60
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
+  register: dirsrv_repl_final_status
+  changed_when: false
+  failed_when: dirsrv_repl_final_status.rc != 0
+  until: >-
+    (dirsrv_repl_final_status.stdout | lower | default('')) is search('successfully initialized')
+  retries: "{{ max_tries }}"
+  delay: 5
+  throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value

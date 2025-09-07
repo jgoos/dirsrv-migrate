@@ -9,16 +9,7 @@
 - name: Enable | Build local dsconf connection URL
   ansible.builtin.set_fact:
     dirsrv_repl_conn_url: >-
-      {{
-        (dirsrv_ldapi_uri)
-          if (dirsrv_ldapi_uri | default('') | length > 0)
-          else (
-            (
-              'ldapi://' ~ (dirsrv_ldapi_socket_path | regex_replace('/', '%2F'))
-            ) if (dirsrv_ldapi_socket_path | default('') | length > 0)
-            else ((dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port)
-          )
-      }}
+      {{ (dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port }}
 
 # Test-only: enable DS logs to ensure access/audit present (best-effort)
 - name: Log | Enable access log (test-only)
@@ -189,6 +180,38 @@
     (dirsrv_repl_enable_get.rc != 0) or
     ((dirsrv_repl_enable_get.stdout | default('') | length) == 0) or
     (((dirsrv_repl_enable_get.stdout | from_json).attrs.nsds5replicatype | default([]) | length) == 0)
+  loop: "{{ dirsrv_repl_suffixes }}"
+  loop_control:
+    label: "{{ item }}"
+  when:
+    - dirsrv_repl_suffixes | length > 0
+
+- name: Repair | Enable replication if missing (best-effort)
+  vars:
+    _suffix: "{{ item.item }}"
+    _need_enable: >-
+      {{ (item.rc != 0) or ((item.stdout | default('') | length) == 0) or ((((item.stdout | default('{}') | from_json).attrs.nsds5replicatype | default([]) | length) | int) == 0) }}
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication enable --suffix "{{ _suffix }}" --role "{{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}" {{ (dirsrv_repl_this_node.role in ['supplier','hub']) | ternary('--replica-id ' ~ (dirsrv_repl_replica_ids[_suffix][inventory_hostname] | default('')), '') }}
+  register: dirsrv_repl_enable_repair
+  changed_when: dirsrv_repl_enable_repair.rc == 0
+  failed_when: false
+  loop: "{{ dirsrv_repl_enable_get.results | default([]) }}"
+  when:
+    - dirsrv_repl_suffixes | length > 0
+    - _need_enable | bool
+
+- name: Verify | Replication enabled after repair
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    -j replication get --suffix "{{ item }}"
+  register: dirsrv_repl_enable_get_final
+  changed_when: false
+  failed_when: >-
+    (dirsrv_repl_enable_get_final.rc != 0) or
+    ((dirsrv_repl_enable_get_final.stdout | default('') | length) == 0) or
+    (((dirsrv_repl_enable_get_final.stdout | from_json).attrs.nsds5replicatype | default([]) | length) == 0)
   loop: "{{ dirsrv_repl_suffixes }}"
   loop_control:
     label: "{{ item }}"
@@ -465,6 +488,44 @@
     - dirsrv_repl_auth.method == 'SIMPLE'
     - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
 
+- name: Enable | Ensure replication manager password matches (SIMPLE, LDAPI EXTERNAL)
+  ansible.builtin.shell: |
+    cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
+    dn: cn=replication manager,cn=config
+    changetype: modify
+    replace: userPassword
+    userPassword: {{ dirsrv_repl_auth.bind_password }}
+    LDIF
+  args:
+    executable: /bin/sh
+  register: dirsrv_repl_mgr_pwd
+  no_log: true
+  changed_when: false
+  failed_when: false
+  when:
+    - dirsrv_repl_auth.method == 'SIMPLE'
+    - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
+    - dirsrv_ldapi_uri | default('') | length > 0
+
+- name: Enable | Ensure replication manager password matches (SIMPLE, DM bind)
+  ansible.builtin.shell: |
+    cat <<'LDIF' | ldapmodify -x -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" -H "{{ dirsrv_repl_conn_url }}"
+    dn: cn=replication manager,cn=config
+    changetype: modify
+    replace: userPassword
+    userPassword: {{ dirsrv_repl_auth.bind_password }}
+    LDIF
+  args:
+    executable: /bin/sh
+  register: dirsrv_repl_mgr_pwd_dm
+  no_log: true
+  changed_when: false
+  failed_when: false
+  when:
+    - dirsrv_repl_auth.method == 'SIMPLE'
+    - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
+    - dirsrv_ldapi_uri | default('') | length == 0
+
 - name: Enable | Authorize inbound supplier bind DN(s) on this node
   vars:
     suffix: "{{ item.0.key }}"
@@ -486,6 +547,21 @@
     - dirsrv_repl_auth.method == 'SIMPLE'
     - agree.to == inventory_hostname
 
+- name: Enable | Ensure inbound bind DN present on this node for each suffix (SIMPLE)
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication set --suffix "{{ item }}" --repl-add-bind-dn "{{ dirsrv_repl_auth.bind_dn }}"
+  register: dirsrv_repl_add_binddn_suffix
+  no_log: true
+  changed_when: >-
+    dirsrv_repl_add_binddn_suffix.rc == 0 and (
+      'Successfully updated replication configuration' in (dirsrv_repl_add_binddn_suffix.stdout | default(''))
+    )
+  failed_when: false
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - dirsrv_repl_auth.method == 'SIMPLE'
+
 - name: Verify | Replication manager entry exists (guarded)
   ansible.builtin.command:
     argv:
@@ -506,6 +582,24 @@
   register: dirsrv_repl_mgr_search
   changed_when: false
   failed_when: dirsrv_repl_mgr_search.rc != 0
+  when:
+    - dirsrv_repl_verify_post_enable | bool
+    - dirsrv_repl_auth.method == 'SIMPLE'
+
+- name: Verify | Replication manager can bind (guarded)
+  ansible.builtin.command:
+    argv:
+      - ldapwhoami
+      - -x
+      - -D
+      - "{{ dirsrv_repl_auth.bind_dn }}"
+      - -w
+      - "{{ dirsrv_repl_auth.bind_password }}"
+      - -H
+      - "{{ dirsrv_repl_conn_url }}"
+  register: dirsrv_repl_mgr_bind
+  changed_when: false
+  failed_when: dirsrv_repl_mgr_bind.rc != 0
   when:
     - dirsrv_repl_verify_post_enable | bool
     - dirsrv_repl_auth.method == 'SIMPLE'
