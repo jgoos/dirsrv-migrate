@@ -600,6 +600,7 @@
   register: dirsrv_repl_mgr_bind
   changed_when: false
   failed_when: dirsrv_repl_mgr_bind.rc != 0
+  no_log: true
   when:
     - dirsrv_repl_verify_post_enable | bool
     - dirsrv_repl_auth.method == 'SIMPLE'
