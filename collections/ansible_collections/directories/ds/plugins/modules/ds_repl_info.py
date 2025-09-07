@@ -1,21 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from ansible.module_utils.basic import AnsibleModule
-import re
-from datetime import datetime, timezone
-
-try:
-    from ansible_collections.directories.ds.plugins.module_utils import dsldap
-except Exception:  # pragma: no cover
-    import importlib.util
-    import sys
-    import pathlib
-    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
-    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
-    dsldap = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = dsldap
-    spec.loader.exec_module(dsldap)
+# Copyright: (c) 2025, Directory Services Team
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 DOCUMENTATION = r'''
 ---
@@ -59,7 +46,6 @@ options:
   bind_pw:
     description: Password for SIMPLE bind.
     type: str
-    no_log: true
   tls_ca:
     description: CA file path when validating LDAPS.
     type: path
@@ -116,6 +102,22 @@ agreements:
       last_update_end: "20250907091740Z"
       last_update_epoch: 1757246260
 '''
+
+from ansible.module_utils.basic import AnsibleModule
+import re
+from datetime import datetime, timezone
+
+try:
+    from ansible_collections.directories.ds.plugins.module_utils import dsldap
+except Exception:  # pragma: no cover
+    import importlib.util
+    import sys
+    import pathlib
+    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
+    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
+    dsldap = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dsldap
+    spec.loader.exec_module(dsldap)
 
 _CODE_RE = re.compile(r"^(-?\d+)")
 

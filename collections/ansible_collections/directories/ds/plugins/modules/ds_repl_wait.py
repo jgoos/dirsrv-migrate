@@ -1,22 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from ansible.module_utils.basic import AnsibleModule
-import time
-import re
-from datetime import datetime, timezone
-
-try:
-    from ansible_collections.directories.ds.plugins.module_utils import dsldap
-except Exception:  # pragma: no cover
-    import importlib.util
-    import sys
-    import pathlib
-    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
-    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
-    dsldap = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = dsldap
-    spec.loader.exec_module(dsldap)
+# Copyright: (c) 2025, Directory Services Team
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 DOCUMENTATION = r'''
 ---
@@ -39,16 +25,16 @@ options:
     type: bool
     default: false
     description: If true (and agreements unset) wait on all under replica.
-  stale_seconds: {type: int, default: 300}
-  steady_ok_polls: {type: int, default: 3}
-  poll_interval: {type: int, default: 10}
-  timeout: {type: int, default: 900}
-  require_init_success: {type: bool, default: true}
-  use_ldapi: {type: bool, default: true}
-  ldaps_host: {type: str}
-  ldaps_port: {type: int, default: 636}
-  connect_timeout: {type: int, default: 5}
-  op_timeout: {type: int, default: 30}
+  stale_seconds: {type: int, default: 300, description: Maximum age in seconds for last successful update}
+  steady_ok_polls: {type: int, default: 3, description: Consecutive healthy polls required before success}
+  poll_interval: {type: int, default: 10, description: Seconds to wait between polls}
+  timeout: {type: int, default: 900, description: Maximum time to wait for healthy agreements}
+  require_init_success: {type: bool, default: true, description: Require last init to have succeeded (code 0)}
+  use_ldapi: {type: bool, default: true, description: Prefer LDAPI (SASL/EXTERNAL) for local instance}
+  ldaps_host: {type: str, description: LDAPS fallback host when LDAPI is unavailable}
+  ldaps_port: {type: int, default: 636, description: LDAPS fallback port}
+  connect_timeout: {type: int, default: 5, description: LDAP connect timeout seconds}
+  op_timeout: {type: int, default: 30, description: LDAP operation timeout seconds}
 '''
 
 EXAMPLES = r'''
@@ -76,6 +62,23 @@ observations:
       init_code: 0
       status: "unknown|healthy|stale|failed"
 '''
+
+from ansible.module_utils.basic import AnsibleModule
+import time
+import re
+from datetime import datetime, timezone
+
+try:
+    from ansible_collections.directories.ds.plugins.module_utils import dsldap
+except Exception:  # pragma: no cover
+    import importlib.util
+    import sys
+    import pathlib
+    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
+    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
+    dsldap = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dsldap
+    spec.loader.exec_module(dsldap)
 
 _CODE_RE = re.compile(r"^(-?\d+)")
 

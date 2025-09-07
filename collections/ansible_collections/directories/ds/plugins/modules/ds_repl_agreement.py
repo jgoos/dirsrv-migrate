@@ -1,19 +1,8 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from ansible.module_utils.basic import AnsibleModule
-
-try:
-    from ansible_collections.directories.ds.plugins.module_utils import dsldap
-except Exception:  # pragma: no cover
-    import importlib.util
-    import sys
-    import pathlib
-    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
-    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
-    dsldap = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = dsldap
-    spec.loader.exec_module(dsldap)
+# Copyright: (c) 2025, Directory Services Team
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 
 DOCUMENTATION = r'''
 ---
@@ -31,7 +20,7 @@ options:
   consumer_port: {description: Consumer port, type: int, default: 636}
   bind_method: {description: Bind method for remote, type: str, choices: [simple, sslclientauth], default: simple}
   bind_dn: {description: Bind DN when SIMPLE, type: str}
-  bind_pw: {description: Bind password when SIMPLE, type: str, no_log: true}
+  bind_pw: {description: Bind password when SIMPLE, type: str}
   transport: {description: Transport type, type: str, choices: [LDAPS, StartTLS, LDAP], default: LDAPS}
   tls_ca: {description: CA file for LDAPS, type: path}
   tls_client_cert: {description: Client cert for sslclientauth, type: path}
@@ -77,6 +66,20 @@ changed:
   returned: always
   type: bool
 '''
+
+from ansible.module_utils.basic import AnsibleModule
+
+try:
+    from ansible_collections.directories.ds.plugins.module_utils import dsldap
+except Exception:  # pragma: no cover
+    import importlib.util
+    import sys
+    import pathlib
+    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
+    spec = importlib.util.spec_from_file_location('dsldap', str(_p))
+    dsldap = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dsldap
+    spec.loader.exec_module(dsldap)
 
 
 def _escape_suffix_value(suffix_dn):

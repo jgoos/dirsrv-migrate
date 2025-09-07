@@ -1,0 +1,10 @@
+{
+    "docs": "https://docs.ansible.com/ansible-core/2.18/dev_guide/testing/sanity/ansible-doc.html", 
+    "results": [
+        {
+            "message": "The test `ansible-test sanity --test ansible-doc` [[explain](https://docs.ansible.com/ansible-core/2.18/dev_guide/testing/sanity/ansible-doc.html)] failed with the error:", 
+            "output": "Command \"ansible-doc -t module directories.ds.ds_repl_agreement directories.ds.ds_repl_binddn_auth directories.ds.ds_repl_enable directories.ds.ds_repl_info directories.ds.ds_repl_init directories.ds.ds_repl_manager directories.ds.ds_repl_wait\" returned exit status 1.\n>>> Standard Error\nERROR! Unable to retrieve documentation from 'directories.ds.ds_repl_wait'. All (sub-)options and return values must have a 'description' field"
+        }
+    ], 
+    "verified": false
+}

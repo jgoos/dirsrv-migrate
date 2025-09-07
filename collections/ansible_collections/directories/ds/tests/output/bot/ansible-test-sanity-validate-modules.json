@@ -1,0 +1,10 @@
+{
+    "docs": "https://docs.ansible.com/ansible-core/2.18/dev_guide/testing/sanity/validate-modules.html", 
+    "results": [
+        {
+            "message": "The test `ansible-test sanity --test validate-modules` [[explain](https://docs.ansible.com/ansible-core/2.18/dev_guide/testing/sanity/validate-modules.html)] failed with 7 errors:", 
+            "output": "plugins/modules/ds_repl_agreement.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module\nplugins/modules/ds_repl_binddn_auth.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module\nplugins/modules/ds_repl_enable.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module\nplugins/modules/ds_repl_info.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module\nplugins/modules/ds_repl_init.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module\nplugins/modules/ds_repl_manager.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module\nplugins/modules/ds_repl_wait.py:0:0: missing-gplv3-license: GPLv3 license header not found in the first 20 lines of the module"
+        }
+    ], 
+    "verified": false
+}
