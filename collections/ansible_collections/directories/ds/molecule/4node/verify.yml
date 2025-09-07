@@ -1,0 +1,172 @@
+---
+- name: Verify replication health and module returns
+  hosts: ds-s1,ds-s2
+  gather_facts: false
+  vars_files:
+    - ../../../../../..//test/repl_mesh_vars.yml
+  tasks:
+    - name: Read replication info
+      directories.ds.ds_repl_info:
+        instance: "localhost"
+        suffix: "dc=example,dc=com"
+      register: info
+
+    - name: Assert replica enabled and agreements present
+      ansible.builtin.assert:
+        that:
+          - info.replica.enabled | default(true)
+          - (info.agreements | length) >= 1
+        fail_msg: "Replica disabled or no agreements returned"
+
+    - name: Assert last_update_code is 0 for all agreements
+      ansible.builtin.assert:
+        that: "(item.last_update_code | default(0)) == 0"
+        fail_msg: "Agreement has non-zero last_update_code"
+      loop: "{{ info.agreements }}"
+
+    - name: Wait agreements healthy (final)
+      directories.ds.ds_repl_wait:
+        instance: "localhost"
+        suffix: "dc=example,dc=com"
+        all: true
+        stale_seconds: 300
+        steady_ok_polls: 3
+        poll_interval: 5
+        timeout: 600
+
+- name: CRUD probe (add on supplier, read on consumer)
+  hosts: ds-s1
+  gather_facts: false
+  vars_files:
+    - ../../../../../..//test/repl_mesh_vars.yml
+  vars:
+    dn_ou: "ou=people,dc=example,dc=com"
+    dn_user: "uid=molecule-verify,ou=people,dc=example,dc=com"
+  tasks:
+    - name: Ensure OU exists on supplier
+      ansible.builtin.shell: |
+        cat <<'LDIF' | ldapadd -x -D "cn=Directory Manager" -w "{{ dirsrv_password }}" -H ldap://localhost:389 || true
+        dn: {{ dn_ou }}
+        objectClass: top
+        objectClass: organizationalUnit
+        ou: people
+        LDIF
+      args:
+        executable: /bin/sh
+      changed_when: false
+      failed_when: false
+
+    - name: Add test user on supplier (idempotent)
+      ansible.builtin.shell: |
+        cat <<'LDIF' | ldapadd -x -D "cn=Directory Manager" -w "{{ dirsrv_password }}" -H ldap://localhost:389 || true
+        dn: {{ dn_user }}
+        objectClass: top
+        objectClass: inetOrgPerson
+        uid: molecule-verify
+        sn: Verify
+        cn: Molecule Verify
+        LDIF
+      args:
+        executable: /bin/sh
+      changed_when: false
+      failed_when: false
+
+    - name: Verify entry replicated to consumer c1
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - "{{ dirsrv_password }}"
+          - -H
+          - ldap://localhost:389
+          - -s
+          - base
+          - -b
+          - "{{ dn_user }}"
+          - dn
+      register: _search_c1
+      changed_when: false
+      failed_when: false
+      until: _search_c1.rc == 0
+      retries: 30
+      delay: 2
+      delegate_to: ds-c1
+
+- name: Negative auth/connectivity test (break and fix agreement)
+  hosts: ds-s1
+  gather_facts: false
+  vars_files:
+    - ../../../../../..//test/repl_mesh_vars.yml
+  tasks:
+    - name: Read agreements to select one to consumer
+      directories.ds.ds_repl_info:
+        instance: "localhost"
+        suffix: "dc=example,dc=com"
+      register: info_s1
+
+    - name: Choose target agreement DN and original port
+      ansible.builtin.set_fact:
+        _agmt_choice: "{{ (info_s1.agreements | selectattr('host','search','c1\\.dsnet\\.test') | list | first) | default(info_s1.agreements[0] | default({})) }}"
+        _agmt_dn: "{{ _agmt_choice.dn | default('') }}"
+        _orig_port: "{{ _agmt_choice.port | default(3389) }}"
+
+    - name: Break agreement by setting wrong port
+      ansible.builtin.shell: |
+        cat <<'LDIF' | ldapmodify -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket || true
+        dn: {{ _agmt_dn }}
+        changetype: modify
+        replace: nsds5ReplicaPort
+        nsds5ReplicaPort: 63999
+        LDIF
+      args:
+        executable: /bin/sh
+      register: _break_mod
+      changed_when: _break_mod.rc == 0
+      failed_when: false
+
+    - name: Wait expecting unhealthy (short timeout)
+      directories.ds.ds_repl_wait:
+        instance: "localhost"
+        suffix: "dc=example,dc=com"
+        all: true
+        stale_seconds: 30
+        steady_ok_polls: 2
+        poll_interval: 5
+        timeout: 40
+      register: _wait_broken
+      failed_when: false
+      changed_when: false
+
+    - name: Assert wait failed due to timeout (unhealthy)
+      ansible.builtin.assert:
+        that:
+          - _wait_broken.failed | default(false)
+          - _wait_broken.reason | default('') == 'timeout'
+        fail_msg: "Expected ds_repl_wait to time out when agreement is broken"
+
+    - name: Restore original port
+      ansible.builtin.shell: |
+        cat <<'LDIF' | ldapmodify -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket || true
+        dn: {{ _agmt_dn }}
+        changetype: modify
+        replace: nsds5ReplicaPort
+        nsds5ReplicaPort: {{ _orig_port }}
+        LDIF
+      args:
+        executable: /bin/sh
+      register: _fix_mod
+      changed_when: _fix_mod.rc == 0
+      failed_when: false
+
+    - name: Wait agreements healthy after fix
+      directories.ds.ds_repl_wait:
+        instance: "localhost"
+        suffix: "dc=example,dc=com"
+        all: true
+        stale_seconds: 300
+        steady_ok_polls: 3
+        poll_interval: 5
+        timeout: 600
