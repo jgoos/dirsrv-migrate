@@ -34,6 +34,7 @@
   register: dirsrv_repl_remote_bind
   changed_when: false
   failed_when: false
+  no_log: true
   until: dirsrv_repl_remote_bind.rc == 0
   retries: "{{ max_tries }}"
   delay: 2
@@ -321,6 +322,34 @@
   become: false
   loop: "{{ dirsrv_repl_agmt_frac.results | default([]) }}"
   when: dirsrv_debug | bool
+
+- name: Agreements | Start online init
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - init
+      - --suffix
+      - "{{ item.0.key }}"
+      - "{{ item.1.name }}"
+  register: dirsrv_repl_init_start
+  changed_when: dirsrv_repl_init_start.rc == 0
+  failed_when: false
+  no_log: true
+  throttle: 1
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_init_mode == 'online'
+    - (item.1.init | default(false)) | bool
+    - not ansible_check_mode
 
 - name: Agreements | Poll init-status to completion (online mode)
   vars:
