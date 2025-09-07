@@ -118,50 +118,42 @@
   loop: "{{ _pre_repl_get.results | default([]) }}"
   when: dirsrv_debug | bool
 
-- name: Enable | Run replication enable
+- name: Enable | Ensure replication enabled via module
   vars:
     repl_role: >-
       {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}
     replica_map: "{{ dirsrv_repl_replica_ids[item] | default({}) }}"
     repl_id: "{{ replica_map.get(inventory_hostname) }}"
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}"
-    {{ dirsrv_repl_conn_url }} replication enable
-    --suffix "{{ item }}" --role "{{ repl_role }}"
-    {{ ((repl_role == 'supplier') and (repl_id is defined)) | ternary('--replica-id ' ~ repl_id, '') }}
-  no_log: true
+  directories.ds.ds_repl_enable:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ item }}"
+    role: "{{ repl_role }}"
+    replica_id: "{{ repl_id if (repl_role == 'supplier' or repl_role == 'hub') else omit }}"
+    conn_url: "{{ dirsrv_repl_conn_url }}"
+    dm_dn: "{{ dirsrv_dm_dn }}"
+    dm_pw: "{{ dirsrv_password }}"
   register: dirsrv_repl_enable
-  changed_when: dirsrv_repl_enable.rc == 0
-  failed_when: false
   loop: "{{ dirsrv_repl_suffixes }}"
   loop_control:
     label: "{{ item }} -> role={{ repl_role }}"
   when:
     - dirsrv_repl_suffixes | length > 0
 
-- name: Snapshot | Replication enable command results (test-only)
+- name: Snapshot | Replication enable results (test-only)
   vars:
     res: "{{ item }}"
     suffix: "{{ item.item }}"
     __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
-    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
-    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
-    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--passwd) +[^ ]+','--passwd ****') }}"
-    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
-    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
   ansible.builtin.copy:
     content: |
       {{ {
           'host': inventory_hostname,
           'step': 'repl-enable-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
           'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
-          'argv_redacted': __san_cmd,
-          'rc': res.rc | default(-1),
-          'stdout_excerpt': (res.stdout | default(''))[:2048],
-          'stderr_excerpt': (res.stderr | default(''))[:2048],
-          'duration_ms': __dur_ms
+          'changed': res.changed | default(false),
+          'details': res.details | default({})
         } | to_nice_json }}
-    dest: "{{ [__snap_dir, 'cmd-repl-enable-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    dest: "{{ [__snap_dir, 'module-repl-enable-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
     mode: "0640"
   connection: local
   delegate_to: localhost
@@ -170,53 +162,7 @@
   when:
     - dirsrv_debug | bool
 
-- name: Enable | Verify replication enabled for suffix
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    -j replication get --suffix "{{ item }}"
-  register: dirsrv_repl_enable_get
-  changed_when: false
-  failed_when: >-
-    (dirsrv_repl_enable_get.rc != 0) or
-    ((dirsrv_repl_enable_get.stdout | default('') | length) == 0) or
-    (((dirsrv_repl_enable_get.stdout | from_json).attrs.nsds5replicatype | default([]) | length) == 0)
-  loop: "{{ dirsrv_repl_suffixes }}"
-  loop_control:
-    label: "{{ item }}"
-  when:
-    - dirsrv_repl_suffixes | length > 0
-
-- name: Repair | Enable replication if missing (best-effort)
-  vars:
-    _suffix: "{{ item.item }}"
-    _need_enable: >-
-      {{ (item.rc != 0) or ((item.stdout | default('') | length) == 0) or ((((item.stdout | default('{}') | from_json).attrs.nsds5replicatype | default([]) | length) | int) == 0) }}
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    replication enable --suffix "{{ _suffix }}" --role "{{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}" {{ (dirsrv_repl_this_node.role in ['supplier','hub']) | ternary('--replica-id ' ~ (dirsrv_repl_replica_ids[_suffix][inventory_hostname] | default('')), '') }}
-  register: dirsrv_repl_enable_repair
-  changed_when: dirsrv_repl_enable_repair.rc == 0
-  failed_when: false
-  loop: "{{ dirsrv_repl_enable_get.results | default([]) }}"
-  when:
-    - dirsrv_repl_suffixes | length > 0
-    - _need_enable | bool
-
-- name: Verify | Replication enabled after repair
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    -j replication get --suffix "{{ item }}"
-  register: dirsrv_repl_enable_get_final
-  changed_when: false
-  failed_when: >-
-    (dirsrv_repl_enable_get_final.rc != 0) or
-    ((dirsrv_repl_enable_get_final.stdout | default('') | length) == 0) or
-    (((dirsrv_repl_enable_get_final.stdout | from_json).attrs.nsds5replicatype | default([]) | length) == 0)
-  loop: "{{ dirsrv_repl_suffixes }}"
-  loop_control:
-    label: "{{ item }}"
-  when:
-    - dirsrv_repl_suffixes | length > 0
+# Verification via dsconf JSON is handled inside the module
 
 - name: Snapshot | Replication get (post-enable) results (test-only)
   vars:
