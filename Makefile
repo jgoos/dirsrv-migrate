@@ -209,8 +209,8 @@ reset_389ds:
 
 # Show what would be removed (untracked + ignored files)
 clean_dry:
-	@echo "[dry-run] git clean -fdx -n"
-	@git clean -fdx -n
+	@echo "[dry-run] git clean -fdX -n (ignored files only)"
+	@git clean -fdX -n
 
 # Remove everything not tracked by git (DANGEROUS)
 # Usage: make clean CONFIRM=1
@@ -221,7 +221,8 @@ clean:
 	  echo "Run: make clean CONFIRM=1   # to delete"; \
 	  exit 2; \
 	fi
-	@git clean -fdx
+	@echo "Cleaning ignored files only (safer): git clean -fdX"
+	@git clean -fdX
 # Mesh replication test (2 suppliers, 2 consumers)
 
 init_389ds_mesh:

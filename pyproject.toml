@@ -1,0 +1,15 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+exclude = [
+  ".ansible",
+  "collections/ansible_collections/**/molecule/**",
+  "test",
+]
+
+[tool.ruff.lint]
+ignore = [
+  "E501", # line too long (handled by line-length)
+  "E402", # module level import not at top (Ansible modules often import inline)
+  "F401", # imported but unused (module docs/import patterns)
+]

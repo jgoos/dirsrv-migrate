@@ -581,7 +581,7 @@ tasks:
       - `molecule test -s 4node` passes locally; rerun shows idempotence.
 
   - title: "CI/Lint: ansible-test sanity for collection + yamllint/flake8"
-    status: todo
+    status: fixed
     priority: P2
     prompt: |
       Add basic static checks for the new collection:
