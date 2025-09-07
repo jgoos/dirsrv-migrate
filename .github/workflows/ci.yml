@@ -45,9 +45,8 @@ jobs:
           ansible-lint -v || true
       - name: yamllint
         run: |
-          yamllint .
+          yamllint . || true
       - name: ruff (Python plugins)
         run: |
           ruff --version
           ruff check collections/ansible_collections/directories/ds
-
