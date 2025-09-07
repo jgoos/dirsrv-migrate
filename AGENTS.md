@@ -12,12 +12,15 @@
 - Document intent briefly in task names; keep comments short and practical.
 
 ## Project Structure & Module Organization
-- `site.yml`: Primary playbook orchestrating the directory server migration.
-- `inventory.yml`: Hosts grouped into source/target groups (e.g., `dirsrv_source`/`dirsrv_target`).
-- `roles/dirsrv_migrate/`: Role implementing migration logic
+- `site.yml`: Primary playbook orchestrating the overall workflow.
+- `inventory.yml`: Hosts grouped into source/target groups (e.g., `dirsrv_source`/`dirsrv_target`) for migration; lab inventories live under `inventories/`.
+- `roles/dirsrv_migrate/`: Migration role (source/target flows)
   - `tasks/`: `main.yml`, `source.yml`, `target.yml`
   - `defaults/main.yml`: Default vars (override in inventory/group_vars)
-  - `templates/`: Jinja2 templates (e.g., `slapd.inf.j2`)
+  - `templates/`: (if used) keep Jinja2 minimal
+- `roles/dirsrv_repl/`: Replication role (enable, agreements, init, wait/monitor)
+- `roles/dirs389.tls/`: TLS helper role for DS instances
+- `roles/dirsrv_tls_csr/`: CSR generation scenarios (lab/testing)
 - `ansible.cfg`: Local config (e.g., `roles_path = roles`).
 - `.ansible/`: Local collections/modules workspace (optional).
 
@@ -73,3 +76,61 @@
 ## Branching & Protection (repo policy)
 - Protect `main`: require PR reviews and passing checks. Disallow force pushes and direct pushes.
 - Use feature branches per change; keep PRs focused and scoped.
+
+
+## Lab Topology & Ports (from DESIGN)
+- Containers: upstream 389-DS images under Podman on macOS.
+- Topologies: 2 suppliers (s1,s2) + consumers (c1,c2) or full mesh.
+- Naming: use deterministic FQDNs `*.dsnet.test`; instance names align to container names.
+- Ports in containers: LDAP `3389`, LDAPS `3636`, LDAPI socket under `/data/run/slapd-<instance>.socket`.
+- Agreements use container DNS names (e.g., `s1.dsnet.test:3389/3636`).
+
+## Podman & Networking
+- Use a single user-defined network (e.g., `dsnet`) with DNS enabled; avoid multiple networks per container.
+- Prefer running Ansible against containers via the Podman connection plugin or inside the Podman VM so `*.dsnet.test` resolves.
+- Health: wait for LDAPI readiness before configuration (see `init_389ds*` targets).
+
+## TLS & Certificates
+- Prefer upstream 389-DS container TLS flow. Certificates’ CN/SANs must match `*.dsnet.test` names.
+- For lab stability, use LDAP on `3389` during replication bring-up; switch to LDAPS `3636` only when trust is fully configured.
+
+## Replication Conventions
+- Unique replica IDs per supplier/hub per suffix.
+- Create all agreements first (without `--init`), then initialize serially per suffix/target.
+- Serialize init/poll (use `throttle: 1`) to avoid replica lock contention (UpdateInProgress/RUV errors).
+- Keep `nsDS5ReplicaReleaseTimeout` moderate (default 60s is fine) to avoid prolonged locks.
+
+## Health Gating (robust, non-interactive)
+- Avoid dsconf prompts in gates. For health, read agreement entries via `ldapsearch`:
+  - DN: `cn=<agmt>,cn=replica,cn=<escaped suffix>,cn=mapping tree,cn=config`.
+  - Keys: `nsds5replicaLastInitStatusJSON`, `nsds5replicaLastUpdateStatusJSON`, `nsds5replicaUpdateInProgress`.
+  - Healthy when JSON shows `"error": 0` or messages like `Total update succeeded`, `Incremental update succeeded`, `Replica acquired successfully`, and UpdateInProgress is not true.
+- Use EXTERNAL over LDAPI; otherwise bind as Directory Manager (lab default) for non-interactive checks.
+
+## Credentials
+- Store secrets in Vault for real environments.
+- For the lab, `Directory Manager` may be used as the replication bind to reduce drift; production should use a dedicated `cn=replication manager,cn=config` with inbound authorization per suffix.
+
+## Make Targets & Flows
+- Spin-up: `make up` (or `up_389ds`), then `make init_389ds_mesh` to wait on LDAPI.
+- Full mesh test: `make test_repl_mesh ARGS=" -e dirsrv_debug=true -e dirsrv_log_capture=true -vvv"`.
+- Targeted convergence: `make repl_pod_mesh ARGS="... --limit ds-s1"` (then `ds-s2`).
+- Reset: `make reset_hard` (add `PURGE=1` to remove volumes) or `make reset_soft` to restore gold backups in containers.
+- Logs bundle: `make bundle_logs` (includes `.ansible/test_logs` and test artifacts under `test/.ansible/artifacts`).
+
+## Troubleshooting (quick RCA)
+- Agreement snapshot:
+  - `ldapsearch -x -D "cn=Directory Manager" -w $PW -H ldap://localhost:3389 -b 'cn=<agmt>,cn=replica,cn=<escaped suffix>,cn=mapping tree,cn=config' -s base nsds5replicaLastInitStatusJSON nsds5replicaLastUpdateStatusJSON nsDS5ReplicaUpdateInProgress`
+- Replica present:
+  - `dsconf -j -D "cn=Directory Manager" -w $PW ldap://localhost:3389 replication get --suffix dc=example,dc=com`
+  - If missing on consumers: `replication enable --suffix dc=example,dc=com --role consumer`.
+- Inbound allowlist:
+  - `dsconf -D "cn=Directory Manager" -w $PW ldap://localhost:3389 replication set --suffix dc=example,dc=com --repl-add-bind-dn "<bind DN>"`.
+- Final clean re-init:
+  - `dsconf -D "cn=Directory Manager" -w $PW ldap://localhost:3389 repl-agmt init --suffix dc=example,dc=com <agmt-name>` then poll `init-status`.
+
+## Contribution Notes (agent focus)
+- Prefer `argv` with `ansible.builtin.command`; keep `no_log: true` where secrets might appear.
+- Validate inputs (unique IDs, nodes present) with `assert`.
+- Add serialization (`throttle: 1`) around init/poll operations.
+- Favor non-interactive health checks and avoid prompts.
