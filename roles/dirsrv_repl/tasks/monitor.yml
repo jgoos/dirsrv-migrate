@@ -6,6 +6,8 @@
     suffix: "{{ suffix }}"
   register: dirsrv_repl_info_results
   loop: "{{ dirsrv_repl_suffixes }}"
+  changed_when: false
+  failed_when: false
   when: dirsrv_repl_use_modules | bool
 
 - name: Monitor | Show module info (concise)
