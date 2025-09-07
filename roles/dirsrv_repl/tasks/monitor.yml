@@ -1,5 +1,39 @@
----
-- name: Monitor | replication monitor snapshot
+- name: Monitor | Collect replication info via module (feature-flagged)
+  vars:
+    suffix: "{{ item }}"
+  directories.ds.ds_repl_info:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ suffix }}"
+  register: dirsrv_repl_info_results
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when: dirsrv_repl_use_modules | bool
+
+- name: Monitor | Show module info (concise)
+  ansible.builtin.debug:
+    msg: >-
+      suffix={{ item.item }} enabled={{ item.replica.enabled | default(None) }}
+      agmts={{ (item.agreements | map(attribute='host') | list) | default([]) }}
+  loop: "{{ dirsrv_repl_info_results.results | default([]) }}"
+  when:
+    - dirsrv_repl_use_modules | bool
+
+- name: Monitor | Write module info snapshots (test-only)
+  vars:
+    suffix: "{{ item.item }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join), inventory_hostname] | path_join }}"
+  ansible.builtin.copy:
+    content: "{{ {'host': inventory_hostname, 'suffix': suffix, 'replica': item.replica, 'agreements': item.agreements} | to_nice_json }}"
+    dest: "{{ [__snap_dir, 'repl-info-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_info_results.results | default([]) }}"
+  when:
+    - dirsrv_repl_use_modules | bool
+    - dirsrv_debug | bool
+
+- name: Monitor | replication monitor snapshot (fallback)
   ansible.builtin.command: >-
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     replication monitor
@@ -7,13 +41,16 @@
   changed_when: false
   failed_when: false
   no_log: true
+  when: not dirsrv_repl_use_modules | bool
 
-- name: Monitor | Show monitor snapshot (concise)
+- name: Monitor | Show monitor snapshot (concise) (fallback)
   ansible.builtin.debug:
     var: dirsrv_repl_monitor.stdout
-  when: dirsrv_repl_monitor.stdout is defined
+  when:
+    - not dirsrv_repl_use_modules | bool
+    - dirsrv_repl_monitor.stdout is defined
 
-- name: Monitor | Agreement status per local agreements
+- name: Monitor | Agreement status per local agreements (fallback)
   ansible.builtin.command: >-
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     repl-agmt status --suffix "{{ item_suffix }}" {{ item_agmt.name }}
@@ -28,6 +65,7 @@
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
   when:
+    - not dirsrv_repl_use_modules | bool
     - item_agmt.from == inventory_hostname
 
 - name: Monitor | ds-replcheck (optional)
