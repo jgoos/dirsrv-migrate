@@ -1,0 +1,16 @@
+namespace: directories
+name: ds
+version: 0.0.1
+readme: README.md
+authors:
+  - platform/dirsrv
+description: "389-DS replication helpers: agreements create/read/wait (LDAPI-first)"
+tags: [ldap, 389ds, rhds, replication]
+license: ''
+dependencies: {}
+build_ignore:
+  - "**/.git*"
+  - "**/__pycache__"
+  - "**/*.pyc"
+  - "**/*.pyo"
+  - "**/*.retry"

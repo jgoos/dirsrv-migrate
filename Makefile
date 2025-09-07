@@ -26,7 +26,8 @@ ANSIBLE_TEST_ENV := ANSIBLE_STDOUT_CALLBACK=json ANSIBLE_CALLBACKS_ENABLED=log_p
 
 .PHONY: migrate help \
 	up_389ds init_389ds seed_389ds migrate_pod deps_podman test_389ds verify_389ds down_389ds reset_389ds \
-	clean clean_dry test_ldif_filter csr_pod verify_csr test_csr
+	clean clean_dry test_ldif_filter csr_pod verify_csr test_csr \
+	collection_build collection_install collection_install_dev collection_install_user
 
 # Additional CSR scenarios
 .PHONY: csr_pod_multi verify_csr_multi test_csr_edges
@@ -41,6 +42,7 @@ migrate: deps_podman
 
 help:
 	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, test_csr, down_389ds, reset_389ds"
+	@echo "         collection_build, collection_install_dev, collection_install_user"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
 
 # Design-aligned aliases
@@ -322,3 +324,27 @@ bundle_logs:
 	  .ansible/containers \
 	  test/.ansible/artifacts 2>/dev/null || true; \
 	echo "Created $$ARCHIVE"
+
+# --- Ansible Collection build/install (directories.ds) ---
+
+COLL_NS := directories
+COLL_NAME := ds
+COLL_DIR := collections/ansible_collections/$(COLL_NS)/$(COLL_NAME)
+
+.PHONY: collection_build collection_install_dev collection_install_user collection_install
+
+collection_build:
+	$(call _time,cd $(COLL_DIR) && ansible-galaxy collection build -f,collection_build)
+
+collection_install_dev: collection_build
+	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
+	echo "Installing $$PKG to .ansible/collections (dev path)"; \
+	ansible-galaxy collection install -p .ansible/collections --force "$$PKG"
+
+collection_install_user: collection_build
+	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
+	echo "Installing $$PKG to user path (~/.ansible/collections)"; \
+	ansible-galaxy collection install --force "$$PKG"
+
+# Alias: default install goes to dev path to avoid touching user env implicitly
+collection_install: collection_install_dev

@@ -1,5 +1,5 @@
 version: 1
-generated_at: 2025-09-06T00:00:00Z
+generated_at: 2025-09-07T15:58:40Z
 owner: platform/dirsrv
 tasks:
   - title: "Compose: Use dsnet network and FQDN hostnames (s1/s2/c1/c2)"
@@ -419,3 +419,177 @@ tasks:
       - Makefile
     acceptance_criteria:
       - `make logs` creates a timestamped archive containing the above paths; archive opens without errors.
+
+  - title: "Collection: Scaffold directories.ds (modules, filter, utils)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Create a minimal Ansible collection per MODULE_SPECS.md with three modules, one filter, and a shared LDAP helper:
+      - Namespace/collection: `directories.ds` (local dev path under `.ansible/collections`).
+      - Plugins:
+        - modules: `ds_repl_info`, `ds_repl_agreement`, `ds_repl_wait`.
+        - filter: `generalized_time_to_epoch`.
+        - module_utils: `dsldap.py` (ldapi first, LDAPS fallback, retries/timeouts).
+      - Docs: `README.md`, `docs/API.md`, `docs/REPLICATION_DESIGN.md` with module args/returns.
+      Keep stubs small and idempotent-friendly; no external collections required.
+    files_to_add:
+      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_info.py
+      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_agreement.py
+      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_wait.py
+      - .ansible/collections/ansible_collections/directories/ds/plugins/filter/generalized_time_to_epoch.py
+      - .ansible/collections/ansible_collections/directories/ds/plugins/module_utils/dsldap.py
+      - .ansible/collections/ansible_collections/directories/ds/README.md
+      - .ansible/collections/ansible_collections/directories/ds/docs/API.md
+      - .ansible/collections/ansible_collections/directories/ds/docs/REPLICATION_DESIGN.md
+    commands:
+      - ansible-doc -t module directories.ds.ds_repl_info || true
+      - ansible-doc -t filter directories.ds.generalized_time_to_epoch || true
+    acceptance_criteria:
+      - `ansible-doc -t module directories.ds.ds_repl_info` loads (stub ok).
+      - `ansible-doc -t filter directories.ds.generalized_time_to_epoch` loads.
+      - Collection tree matches MODULE_SPECS.md structure.
+    notes: |
+      Repo ignores `.ansible/`; for shipping the collection, mirror to `collections/` and add it to `collections_path`.
+
+  - title: "Config: Include local collections/ path in ansible.cfg"
+    status: fixed
+    priority: P0
+    prompt: |
+      Add the project `collections/` path to `collections_path` so a vendored collection can be committed if desired, keeping `.ansible/collections` for dev:
+      - Set `collections_path = collections:.ansible/collections:~/.ansible/collections`.
+    files_to_edit:
+      - ansible.cfg
+    acceptance_criteria:
+      - `ansible-doc -t module directories.ds.ds_repl_info` works when the collection is under either `collections/` or `.ansible/collections`.
+
+  - title: "Filter: Implement generalized_time_to_epoch (LDAP Generalized Time → epoch)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Implement filter plugin per MODULE_SPECS.md:
+      - Accept `YYYYmmddHHMMSSZ` and `YYYYmmddHHMMSS.ffffffZ` (truncate fraction).
+      - Return int epoch UTC or None if unparsable.
+      - Keep logic minimal and robust; add docstring with examples.
+    files_to_edit:
+      - .ansible/collections/ansible_collections/directories/ds/plugins/filter/generalized_time_to_epoch.py
+    acceptance_criteria:
+      - `20250101123045Z` → `1735734645`.
+      - `20240229120000Z` parses (leap day).
+      - `20250101123045+0100` returns None.
+
+  - title: "Module Utils: Implement dsldap.py helper (ldapi first, LDAPS fallback)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Build a tiny LDAP helper for modules:
+      - SASL/EXTERNAL over ldapi (`/run/slapd-<inst>.socket` and container path `/data/run/slapd-<inst>.socket`).
+      - LDAPS SIMPLE or mTLS fallback with CA/client certs.
+      - `search_one`, `add`, `modify`, `delete` with timeouts, 3 retries, jitter backoff.
+      - Raise `DsLdapError` carrying `.code` and `.hint`.
+    files_to_edit:
+      - .ansible/collections/ansible_collections/directories/ds/plugins/module_utils/dsldap.py
+    acceptance_criteria:
+      - Can read `cn=config` over ldapi on test nodes.
+      - Transient errors retried; timeouts respected.
+
+  - title: "Module: ds_repl_info (read replica + agreements)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Implement `directories.ds.ds_repl_info` per MODULE_SPECS.md:
+      - Args include `instance`, `suffix`, `use_ldapi` and TLS/auth options.
+      - Return `replica` (enabled, ruv) and list of agreements with parsed status codes and epochs.
+      - Always `changed: false`; fail fast if replica entry missing.
+    files_to_edit:
+      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_info.py
+    acceptance_criteria:
+      - Returns numeric `last_*_code` and `last_*_epoch` per spec.
+      - Missing replica → `failed: true` with clear message.
+
+  - title: "Module: ds_repl_agreement (ensure present/absent)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Implement `directories.ds.ds_repl_agreement` per MODULE_SPECS.md:
+      - Manage agreement DN under `cn=replica,cn=<suffix>,cn=mapping tree,cn=config`.
+      - Identity attrs: host/port/bindDN; transport mapping (LDAPS→SSL, StartTLS→TLS, LDAP).
+      - Optional tunables: backoff_min/max, purge_delay, compression where supported.
+      - Idempotent create/update/delete with clear warnings for unsupported attrs.
+      - Validate auth mode requirements; no secrets logged.
+    files_to_edit:
+      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_agreement.py
+    acceptance_criteria:
+      - First run may `changed: true`; second run `changed: false` (no drift).
+      - Absent removes existing agreement; missing absent is a no-op.
+
+  - title: "Module: ds_repl_wait (poll until healthy)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Implement `directories.ds.ds_repl_wait` per MODULE_SPECS.md:
+      - Support `agreements: []` or `all: true` under a suffix.
+      - Enforce health: replica enabled, update_code==0, not stale, and (optionally) init_code==0 for `require_init_success`.
+      - Loop internally with `steady_ok_polls`, `poll_interval`, `timeout`; return detailed observations/hints on failure.
+    files_to_edit:
+      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_wait.py
+    acceptance_criteria:
+      - Succeeds when agreements are healthy; fails with `reason: timeout` and hints when broken.
+
+  - title: "Role Integration: Switch dirsrv_repl to use directories.ds modules (feature-flagged)"
+    status: fixed
+    priority: P0
+    prompt: |
+      Replace dsconf/ldapsearch shells with collection modules, behind a guard var for gradual rollout:
+      - Add `dirsrv_repl_use_modules: true` default in `roles/dirsrv_repl/defaults/main.yml`.
+      - In `agreements.yml`, use `directories.ds.ds_repl_agreement` for create/update and remove schedule/attrs via module where possible.
+      - In `wait_green.yml`, use `directories.ds.ds_repl_wait` with `all: true`.
+      - Keep CLI fallback path when `dirsrv_repl_use_modules: false` (no behavior regressions).
+    files_to_edit:
+      - roles/dirsrv_repl/defaults/main.yml
+      - roles/dirsrv_repl/tasks/agreements.yml
+      - roles/dirsrv_repl/tasks/wait_green.yml
+    acceptance_criteria:
+      - When flag enabled, no `dsconf` calls are executed for agreements/wait.
+      - Idempotence holds across two runs; health gating works.
+
+  - title: "Docs: Add collection README and API usage snippets"
+    status: fixed
+    priority: P1
+    prompt: |
+      Document the new modules and integration flow:
+      - Collection `README.md` with quickstart and security notes (ldapi preferred, secrets via Vault).
+      - `docs/API.md` with args/returns for each module and examples from MODULE_SPECS.md.
+      - Cross-link from repo `docs/DESIGN.md` and `docs/MODULE_SPECS.md`.
+    files_to_edit:
+      - collections/ansible_collections/directories/ds/README.md
+      - collections/ansible_collections/directories/ds/docs/API.md
+    acceptance_criteria:
+      - Examples run with current lab; docs describe LDAPI vs LDAPS behavior and staleness semantics.
+
+  - title: "Testing: Add Molecule scenario 4node for directories.ds"
+    status: fixed
+    priority: P1
+    prompt: |
+      Create a Molecule `4node` scenario to validate the modules with the existing Podman lab:
+      - Sequence: enable replication, create agreements (partial mesh), wait healthy, CRUD probe, negative auth test, fix, and pass.
+      - Assert idempotence and module return shapes.
+    files_to_add:
+      - collections/ansible_collections/directories/ds/molecule/4node/molecule.yml
+      - collections/ansible_collections/directories/ds/molecule/4node/converge.yml
+      - collections/ansible_collections/directories/ds/molecule/4node/verify.yml
+    acceptance_criteria:
+      - `molecule test -s 4node` passes locally; rerun shows idempotence.
+
+  - title: "CI/Lint: ansible-test sanity for collection + yamllint/flake8"
+    status: todo
+    priority: P2
+    prompt: |
+      Add basic static checks for the new collection:
+      - `ansible-test sanity --python 3.11` from the collection root.
+      - Run `ansible-lint` and `yamllint` for the repo; `flake8` or `ruff` for Python plugins.
+    commands:
+      - pushd .ansible/collections/ansible_collections/directories/ds && ansible-test sanity || true; popd
+      - ansible-lint || true
+      - yamllint .
+    acceptance_criteria:
+      - Sanity checks pass locally or with clear TODOs for gating later.

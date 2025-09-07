@@ -29,3 +29,4 @@ compose/*.override.yml
 # Test artifacts (archives and stamps) – never commit
 logs-*.tar.gz
 .stamps/
+collections/ansible_collections/directories/ds/*.tar.gz

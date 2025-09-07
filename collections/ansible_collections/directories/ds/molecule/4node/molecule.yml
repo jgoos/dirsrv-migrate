@@ -1,0 +1,49 @@
+---
+dependency:
+  name: galaxy
+  enabled: false
+driver:
+  name: default
+platforms:
+  - name: localhost
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_CONFIG: "{{ lookup('env','MOLECULE_PROJECT_DIRECTORY') }}/../../../../ansible.cfg"
+  inventory:
+    hosts:
+      all:
+        hosts:
+          ds-s1:
+            ansible_connection: containers.podman.podman
+            ansible_host: ds-s1
+            ansible_user: root
+            ansible_remote_tmp: /tmp/.ansible
+            ansible_python_interpreter: auto_silent
+            ansible_become: false
+          ds-s2:
+            ansible_connection: containers.podman.podman
+            ansible_host: ds-s2
+            ansible_user: root
+            ansible_remote_tmp: /tmp/.ansible
+            ansible_python_interpreter: auto_silent
+            ansible_become: false
+          ds-c1:
+            ansible_connection: containers.podman.podman
+            ansible_host: ds-c1
+            ansible_user: root
+            ansible_remote_tmp: /tmp/.ansible
+            ansible_python_interpreter: auto_silent
+            ansible_become: false
+          ds-c2:
+            ansible_connection: containers.podman.podman
+            ansible_host: ds-c2
+            ansible_user: root
+            ansible_remote_tmp: /tmp/.ansible
+            ansible_python_interpreter: auto_silent
+            ansible_become: false
+  playbooks:
+    converge: converge.yml
+    verify: verify.yml
+verifier:
+  name: ansible

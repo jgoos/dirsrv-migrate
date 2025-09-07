@@ -1,0 +1,44 @@
+---
+- name: Prepare Podman lab (bring up and init)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Ensure lab network/containers are up
+      ansible.builtin.command:
+        argv: [make, up_389ds]
+      args:
+        chdir: "{{ playbook_dir }}/../../../../../.."
+      changed_when: false
+
+    - name: Init 4-node mesh readiness (ldapi)
+      ansible.builtin.command:
+        argv: [make, init_389ds_mesh]
+      args:
+        chdir: "{{ playbook_dir }}/../../../../../.."
+      changed_when: false
+
+- name: Enable replication and create agreements via role (modules enabled)
+  hosts: ds-s1,ds-s2,ds-c1,ds-c2
+  gather_facts: false
+  vars_files:
+    - ../../../../../..//test/repl_mesh_vars.yml
+  vars:
+    dirsrv_repl_use_modules: true
+    dirsrv_dm_dn: "cn=Directory Manager"
+  roles:
+    - role: dirsrv_repl
+  serial: 1
+
+- name: Wait for replication health via module
+  hosts: ds-s1,ds-s2
+  gather_facts: false
+  tasks:
+    - name: Wait until agreements are healthy on this supplier
+      directories.ds.ds_repl_wait:
+        instance: "localhost"
+        suffix: "dc=example,dc=com"
+        all: true
+        stale_seconds: 300
+        steady_ok_polls: 3
+        poll_interval: 5
+        timeout: 600
