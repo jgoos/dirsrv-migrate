@@ -1,0 +1,24 @@
+---
+# Defaults for dirsrv_tls role
+# Namespace: use canonical "dirsrv_*" variables to match the repo.
+
+# Master enable switch (guarded in playbooks as well)
+dirsrv_tls_enabled: false
+
+# Instance name (align with other roles)
+dirsrv_instance: dir
+
+# Standard config path derived from instance
+dirsrv_base_config: "/etc/dirsrv/slapd-{{ dirsrv_instance }}"
+
+# TLS inputs (paths to PEM files)
+dirsrv_tls_ca_crt: ""
+dirsrv_tls_server_crt: ""
+
+# Certificate nicknames
+dirsrv_tls_ca_nickname: "lab-CA"
+dirsrv_tls_cert_nickname: "{{ inventory_hostname }}"
+
+# Internal secure port for LDAPS inside the instance/container
+dirsrv_tls_secure_port: 636
+

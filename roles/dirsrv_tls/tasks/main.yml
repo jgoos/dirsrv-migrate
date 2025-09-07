@@ -1,0 +1,145 @@
+---
+# Minimal TLS enablement role per design.
+ #
+# Aligns with repo conventions:
+# - Canonical var namespace: dirsrv_*
+# - Idempotent checks before replace/import operations
+# - FQCN modules and explicit changed_when/failed_when
+
+- name: TLS | Assert inputs provided (guarded)
+  ansible.builtin.assert:
+    that:
+      - (dirsrv_tls_ca_crt | default('')) | length > 0
+      - (dirsrv_tls_server_crt | default('')) | length > 0
+    fail_msg: "Provide TLS inputs: dirsrv_tls_ca_crt (CA PEM), dirsrv_tls_server_crt (server PEM)"
+  when: dirsrv_tls_enabled | default(false)
+
+- name: TLS | Configure TLS (guarded)
+  when: dirsrv_tls_enabled | default(false)
+  block:
+    - name: TLS | Check CA certificate present
+      ansible.builtin.command:
+        argv:
+          - certutil
+          - -L
+          - -d
+          - "{{ dirsrv_base_config }}"
+          - -n
+          - "{{ dirsrv_tls_ca_nickname }}"
+      register: tls_ca_check
+      changed_when: false
+      failed_when: false
+
+    - name: TLS | Import CA certificate (trust CT,C,C)
+      ansible.builtin.command:
+        argv:
+          - certutil
+          - -A
+          - -d
+          - "{{ dirsrv_base_config }}"
+          - -n
+          - "{{ dirsrv_tls_ca_nickname }}"
+          - -t
+          - "CT,C,C"
+          - -a
+          - -i
+          - "{{ dirsrv_tls_ca_crt }}"
+      register: tls_add_ca
+      changed_when: tls_add_ca.rc == 0
+      failed_when: false
+      when: tls_ca_check.rc != 0
+
+    - name: TLS | Check server certificate present
+      ansible.builtin.command:
+        argv:
+          - certutil
+          - -L
+          - -d
+          - "{{ dirsrv_base_config }}"
+          - -n
+          - "{{ dirsrv_tls_cert_nickname }}"
+      register: tls_srv_check
+      changed_when: false
+      failed_when: false
+
+    - name: TLS | Import server certificate as primary
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ dirsrv_instance }}"
+          - security
+          - certificate
+          - add
+          - --file
+          - "{{ dirsrv_tls_server_crt }}"
+          - --name
+          - "{{ dirsrv_tls_cert_nickname }}"
+          - --primary-cert
+      register: tls_add_srv
+      changed_when: tls_add_srv.rc == 0
+      failed_when: false
+      when: tls_srv_check.rc != 0
+
+    - name: TLS | Read current securePort
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ dirsrv_instance }}"
+          - config
+          - get
+          - nsslapd-securePort
+      register: tls_get_port
+      changed_when: false
+      failed_when: tls_get_port.rc != 0
+
+    - name: TLS | Enable secure port
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ dirsrv_instance }}"
+          - config
+          - replace
+          - "nsslapd-securePort={{ dirsrv_tls_secure_port }}"
+      register: tls_sec_port
+      changed_when: tls_sec_port.rc == 0
+      when: tls_get_port.stdout is not search("nsslapd-securePort:\\s*{{ dirsrv_tls_secure_port }}")
+
+    - name: TLS | Read current nsSSLPersonalitySSL
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ dirsrv_instance }}"
+          - config
+          - get
+          - nsSSLPersonalitySSL
+      register: tls_get_nick
+      changed_when: false
+      failed_when: tls_get_nick.rc != 0
+
+    - name: TLS | Set certificate nickname (nsSSLPersonalitySSL)
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ dirsrv_instance }}"
+          - config
+          - replace
+          - "nsSSLPersonalitySSL={{ dirsrv_tls_cert_nickname }}"
+      register: tls_set_nick
+      changed_when: tls_set_nick.rc == 0
+      when: tls_get_nick.stdout is not search("nsSSLPersonalitySSL:\\s*{{ dirsrv_tls_cert_nickname }}")
+
+    - name: TLS | Restart instance to apply settings (only if changed)
+      ansible.builtin.command:
+        argv:
+          - dsctl
+          - "{{ dirsrv_instance }}"
+          - restart
+      register: tls_restart
+      changed_when: tls_restart.rc == 0
+      failed_when: false
+      when:
+        - (tls_add_ca is defined and tls_add_ca is changed) or
+          (tls_add_srv is defined and tls_add_srv is changed) or
+          (tls_sec_port is defined and tls_sec_port is changed) or
+          (tls_set_nick is defined and tls_set_nick is changed)
+
