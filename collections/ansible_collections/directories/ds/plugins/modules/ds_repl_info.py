@@ -232,3 +232,7 @@ def run_module():
 
     module.exit_json(changed=False, replica=result_replica, agreements=agmts)
 
+
+if __name__ == '__main__':
+    run_module()
+
