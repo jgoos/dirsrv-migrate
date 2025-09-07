@@ -103,6 +103,16 @@
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_debug | bool
 
+- name: Snapshot | Ensure local artifacts dir exists (controller)
+  ansible.builtin.file:
+    path: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    state: directory
+    mode: "0750"
+  connection: local
+  delegate_to: localhost
+  become: false
+  when: dirsrv_debug | bool
+
 - name: Artifacts | Write pre-enable replica state
   vars:
     res: "{{ item }}"
@@ -245,7 +255,7 @@
       - base
       - -LLL
       - -b
-      - 'cn={{ suffix | replace("=","\\3D") }},cn=mapping tree,cn=config'
+      - 'cn={{ suffix | replace("=","\\3D") | replace(",","\\2C") }},cn=mapping tree,cn=config'
       - \*
   register: _post_mapping
   changed_when: false
@@ -335,7 +345,7 @@
       - base
       - -LLL
       - -b
-      - "cn={{ item | replace('=','\\3D') }},cn=mapping tree,cn=config"
+      - "cn={{ item | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config"
       - nsslapd-state
       - nsslapd-referral
   register: dirsrv_repl_map_read
@@ -364,7 +374,7 @@
 - name: Enable | Force mapping-tree state to backend (lab only)
   ansible.builtin.shell: |
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item.suffix | replace('=','\\3D') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config
     changetype: modify
     replace: nsslapd-state
     nsslapd-state: backend
@@ -384,7 +394,7 @@
 - name: Enable | Remove mapping-tree referral (lab only)
   ansible.builtin.shell: |
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item.suffix | replace('=','\\3D') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config
     changetype: modify
     delete: nsslapd-referral
     LDIF

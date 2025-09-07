@@ -1,7 +1,8 @@
 ---
 - name: Agreements | Skip if no matrix defined
-  ansible.builtin.meta: noop
-  when: dirsrv_repl_agreements | length == 0
+  ansible.builtin.debug:
+    msg: "No replication agreements defined; skipping"
+  when: (dirsrv_repl_agreements | length | int) == 0
 
 - name: Agreements | Validate target nodes exist
   ansible.builtin.assert:

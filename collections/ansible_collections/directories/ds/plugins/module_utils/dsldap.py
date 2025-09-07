@@ -135,13 +135,21 @@ class DsLdap:
 
     def search_one(self, base: str, scope: str, flt: str, attrs: List[str]) -> Dict[str, Any]:
         url, auth_argv, env = self._first_ok()
-        argv = ["ldapsearch", "-LLL", "-o", f"nettimeout={self.params.connect_timeout}"] + auth_argv + ["-H", url, "-s", scope, "-b", base, flt] + (attrs or [])
+        argv = [
+            "ldapsearch", "-LLL",
+            "-o", f"nettimeout={self.params.connect_timeout}",
+            "-o", "ldif-wrap=no",
+        ] + auth_argv + ["-H", url, "-s", scope, "-b", base, flt] + (attrs or [])
         cp = self._run_with_retry(argv, env=env)
         return self._parse_single_entry(cp.stdout.decode("utf-8", errors="ignore"))
 
     def search(self, base: str, scope: str, flt: str, attrs: List[str]) -> List[Dict[str, Any]]:
         url, auth_argv, env = self._first_ok()
-        argv = ["ldapsearch", "-LLL", "-o", f"nettimeout={self.params.connect_timeout}"] + auth_argv + ["-H", url, "-s", scope, "-b", base, flt] + (attrs or [])
+        argv = [
+            "ldapsearch", "-LLL",
+            "-o", f"nettimeout={self.params.connect_timeout}",
+            "-o", "ldif-wrap=no",
+        ] + auth_argv + ["-H", url, "-s", scope, "-b", base, flt] + (attrs or [])
         cp = self._run_with_retry(argv, env=env)
         return self._parse_entries(cp.stdout.decode("utf-8", errors="ignore"))
 
@@ -187,10 +195,20 @@ class DsLdap:
         argv = ["ldapdelete", "-o", f"nettimeout={self.params.connect_timeout}"] + auth_argv + ["-H", url, dn]
         self._run_with_retry(argv, env=env)
 
+    def _unfold(self, text: str) -> List[str]:
+        lines: List[str] = []
+        for raw in text.splitlines():
+            # LDIF line folding: continuation lines start with a single space
+            if raw.startswith(' ') and lines:
+                lines[-1] += raw[1:]
+            else:
+                lines.append(raw)
+        return lines
+
     def _parse_single_entry(self, text: str) -> Dict[str, Any]:
         entry: Dict[str, Any] = {"attrs": {}}
         dn_seen = False
-        for line in text.splitlines():
+        for line in self._unfold(text):
             if not line.strip():
                 continue
             if line.lower().startswith("dn: "):
@@ -209,12 +227,11 @@ class DsLdap:
     def _parse_entries(self, text: str) -> List[Dict[str, Any]]:
         entries: List[Dict[str, Any]] = []
         cur: Optional[Dict[str, Any]] = None
-        for raw in text.splitlines():
-            line = raw.rstrip('\n')
+        for line in self._unfold(text):
             if not line.strip():
                 if cur is not None and ('dn' in cur):
                     entries.append(cur)
-                    cur = None
+                cur = None
                 continue
             if line.lower().startswith('dn: '):
                 if cur is not None and ('dn' in cur):
@@ -232,4 +249,3 @@ class DsLdap:
         if cur is not None and ('dn' in cur):
             entries.append(cur)
         return entries
-

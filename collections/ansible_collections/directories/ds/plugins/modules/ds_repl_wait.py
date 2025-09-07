@@ -28,13 +28,15 @@ options:
   stale_seconds: {type: int, default: 300, description: Maximum age in seconds for last successful update}
   steady_ok_polls: {type: int, default: 3, description: Consecutive healthy polls required before success}
   poll_interval: {type: int, default: 10, description: Seconds to wait between polls}
-  timeout: {type: int, default: 900, description: Maximum time to wait for healthy agreements}
+  timeout: {type: int, default: 180, description: Maximum time to wait for healthy agreements}
   require_init_success: {type: bool, default: true, description: Require last init to have succeeded (code 0)}
   use_ldapi: {type: bool, default: true, description: Prefer LDAPI (SASL/EXTERNAL) for local instance}
   ldaps_host: {type: str, description: LDAPS fallback host when LDAPI is unavailable}
   ldaps_port: {type: int, default: 636, description: LDAPS fallback port}
   connect_timeout: {type: int, default: 5, description: LDAP connect timeout seconds}
   op_timeout: {type: int, default: 30, description: LDAP operation timeout seconds}
+  debug: {type: bool, default: false, description: Emit periodic progress warnings}
+  log_every: {type: int, default: 5, description: Emit a progress warning every N cycles when debug=true}
 '''
 
 EXAMPLES = r'''
@@ -68,19 +70,21 @@ import time
 import re
 from datetime import datetime, timezone
 
-try:
-    from ansible_collections.directories.ds.plugins.module_utils import dsldap
-except Exception:  # pragma: no cover
-    import importlib.util
-    import sys
-    import pathlib
-    _p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
+import importlib.util
+import sys
+import pathlib
+
+# Prefer local collection-relative module_utils to ensure we use sources shipped with this module (debug/dev friendly)
+_p = pathlib.Path(__file__).resolve().parents[3] / 'module_utils' / 'dsldap.py'
+if _p.exists():
     spec = importlib.util.spec_from_file_location('dsldap', str(_p))
     dsldap = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = dsldap
     spec.loader.exec_module(dsldap)
+else:  # Fallback to standard import path
+    from ansible_collections.directories.ds.plugins.module_utils import dsldap
 
-_CODE_RE = re.compile(r"^(-?\d+)")
+_CODE_RE = re.compile(r"(-?\d+)")
 
 
 def _gtz_to_epoch(value):
@@ -112,7 +116,11 @@ def _observations(client, replica_dn, agmt_dns):
     obs = []
     try:
         rep = client.search_one(replica_dn, 'base', '(objectClass=*)', ['nsds5ReplicaEnabled'])
-        r_enabled = (_first(rep.get('attrs', {}).get('nsds5ReplicaEnabled', [])) or '').lower() in ('on', 'true', 'yes', '1')
+        vals = rep.get('attrs', {}).get('nsds5ReplicaEnabled')
+        if vals:
+            r_enabled = (vals[0] or '').lower() in ('on', 'true', 'yes', '1')
+        else:
+            r_enabled = None
     except Exception:
         r_enabled = None
     for dn in agmt_dns:
@@ -124,8 +132,11 @@ def _observations(client, replica_dn, agmt_dns):
             a = e.get('attrs', {})
             init_status = _first(a.get('nsds5replicaLastInitStatus'))
             upd_status = _first(a.get('nsds5replicaLastUpdateStatus'))
-            init_code = int(_CODE_RE.match(init_status).group(1)) if (isinstance(init_status, str) and _CODE_RE.match(init_status)) else None
-            upd_code = int(_CODE_RE.match(upd_status).group(1)) if (isinstance(upd_status, str) and _CODE_RE.match(upd_status)) else None
+            # Parse first integer anywhere in the status strings if present
+            m_i = _CODE_RE.search(init_status) if isinstance(init_status, str) else None
+            m_u = _CODE_RE.search(upd_status) if isinstance(upd_status, str) else None
+            init_code = int(m_i.group(1)) if m_i else None
+            upd_code = int(m_u.group(1)) if m_u else None
             upd_end = _first(a.get('nsds5replicaLastUpdateEnd'))
             upd_epoch = _gtz_to_epoch(upd_end) if upd_end else None
             upd_age = (now - upd_epoch) if upd_epoch is not None else None
@@ -135,6 +146,8 @@ def _observations(client, replica_dn, agmt_dns):
                 update_code=upd_code,
                 update_age=upd_age if upd_age is not None else -1,
                 init_code=init_code,
+                update_status=upd_status,
+                init_status=init_status,
                 replica_enabled=r_enabled,
                 status=status,
             ))
@@ -149,16 +162,18 @@ def run_module():
         suffix=dict(type='str', required=True),
         agreements=dict(type='list', elements='str', required=False),
         all=dict(type='bool', default=False),
-        stale_seconds=dict(type='int', default=300),
-        steady_ok_polls=dict(type='int', default=3),
-        poll_interval=dict(type='int', default=10),
-        timeout=dict(type='int', default=900),
+        stale_seconds=dict(type='int', default=60),
+        steady_ok_polls=dict(type='int', default=2),
+        poll_interval=dict(type='int', default=3),
+        timeout=dict(type='int', default=180),
         require_init_success=dict(type='bool', default=True),
         use_ldapi=dict(type='bool', default=True),
         ldaps_host=dict(type='str'),
         ldaps_port=dict(type='int', default=636),
         connect_timeout=dict(type='int', default=5),
         op_timeout=dict(type='int', default=30),
+        debug=dict(type='bool', default=False),
+        log_every=dict(type='int', default=5),
     )
 
     module = AnsibleModule(argument_spec=args, supports_check_mode=True)
@@ -185,36 +200,68 @@ def run_module():
             ents = client.search(replica_dn, 'one', '(objectClass=nsDS5ReplicationAgreement)', ['cn'])
         except Exception:
             ents = []
-        target_dns = [e.get('dn') for e in ents if e.get('dn')]
+        # Build DNs from cn values to avoid any LDIF wrapping issues on 'dn:'
+        def _first(vals):
+            return vals[0] if isinstance(vals, list) and vals else None
+        target_dns = []
+        for e in ents:
+            cnv = _first(e.get('attrs', {}).get('cn'))
+            if cnv:
+                target_dns.append(f"cn={cnv},{replica_dn}")
     else:
         module.fail_json(msg="Specify 'agreements' list or set 'all: true'")
 
-    deadline = time.monotonic() + int(p['timeout'])
+    # Visibility: where dsldap came from and what we will watch
+    if p.get('debug'):
+        try:
+            module.warn(f"ds_repl_wait: using dsldap from {getattr(dsldap, '__file__', 'unknown')}")
+        except Exception:
+            pass
+        module.warn(f"ds_repl_wait: discovered agreements: {', '.join(target_dns) if target_dns else '(none)'}")
+
+    start_ts = time.monotonic()
+    deadline = start_ts + int(p['timeout'])
     ok_streak = 0
+    cycle = 0
     last_obs = []
     hints = []
+    progress = []
 
     while time.monotonic() < deadline:
+        cycle += 1
         last_obs = _observations(client, replica_dn, target_dns)
         unhealthy = []
         for o in last_obs:
             if o.get('replica_enabled') is False:
                 unhealthy.append((o['dn'], 'replica disabled'))
                 continue
-            if o.get('update_code') != 0:
+            # Treat None as unknown (not unhealthy). Accept success code or success keywords.
+            uc = o.get('update_code')
+            us = (o.get('update_status') or '').lower()
+            if not (uc == 0 or ('succeed' in us) or ('acquired successfully' in us)):
                 unhealthy.append((o['dn'], 'update_code!=0'))
             age = o.get('update_age')
-            if age is None or age < 0 or age > int(p['stale_seconds']):
-                unhealthy.append((o['dn'], 'stale'))
+            # Consider staleness only when last update did not clearly succeed.
+            if (uc is None or uc != 0):
+                if age is None or age < 0 or age > int(p['stale_seconds']):
+                    unhealthy.append((o['dn'], 'stale'))
             if p.get('require_init_success') and o.get('init_code') not in (None, 0):
                 unhealthy.append((o['dn'], 'init_code!=0'))
+
+        # progress snapshot
+        elapsed = int(time.monotonic() - start_ts)
+        if p.get('debug') and p.get('log_every', 5) > 0 and (cycle % int(p['log_every']) == 0 or cycle == 1):
+            sample = ', '.join([f"{o['dn'].split(',')[0]}:{o.get('status')} age={o.get('update_age')} code={o.get('update_code')}" for o in last_obs][:3])
+            module.warn(f"ds_repl_wait: cycle={cycle} elapsed={elapsed}s unhealthy={len(unhealthy)} ok_streak={ok_streak} sample=[{sample}]")
+        if len(progress) < 50:
+            progress.append(dict(cycle=cycle, elapsed_s=elapsed, unhealthy=len(unhealthy)))
 
         if not unhealthy:
             ok_streak += 1
             for o in last_obs:
                 o['status'] = 'healthy'
             if ok_streak >= int(p['steady_ok_polls']):
-                module.exit_json(changed=False, observations=last_obs)
+                module.exit_json(changed=False, observations=last_obs, cycles=cycle, elapsed_s=elapsed, agreements=len(target_dns), progress=progress)
         else:
             ok_streak = 0
             for dn, reason in unhealthy:
@@ -228,7 +275,8 @@ def run_module():
                     hints.append(f"{dn}: Replica disabled")
         time.sleep(int(p['poll_interval']))
 
-    module.fail_json(msg="Agreements not healthy within timeout", reason="timeout", observations=last_obs, hints=sorted(set(hints)))
+    elapsed_final = int(time.monotonic() - start_ts)
+    module.fail_json(msg="Agreements not healthy within timeout", reason="timeout", observations=last_obs, hints=sorted(set(hints)), cycles=cycle, elapsed_s=elapsed_final, agreements=len(target_dns), progress=progress)
 
 
 if __name__ == '__main__':
