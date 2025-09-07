@@ -24,6 +24,16 @@
 - `ansible.cfg`: Local config (e.g., `roles_path = roles`).
 - `.ansible/`: Local collections/modules workspace (optional).
 
+## Collections Development Workflow (policy)
+- Never develop new code under `.ansible/`. That path is ignored by Git and reserved for installed artifacts only.
+- Always develop collection sources under the vendored path `collections/ansible_collections/directories/ds`.
+- Build and install the collection via Makefile targets:
+  - `make collection_build` – packages the collection from `collections/…/directories/ds`.
+  - `make collection_install_dev` – installs the built tarball to `.ansible/collections` for local runs.
+  - `make collection_install_user` – installs to `~/.ansible/collections`.
+- `ansible.cfg` is configured to search `collections/`, then `.ansible/collections`, then user path.
+- Rationale: prevents drift and ensures all source code is versioned. The `.ansible/` tree should only contain generated/install artifacts.
+
 ## Build, Test, and Development Commands
 - Syntax check: `ansible-playbook --syntax-check site.yml`
 - Lint (if installed): `ansible-lint` and `yamllint .`
