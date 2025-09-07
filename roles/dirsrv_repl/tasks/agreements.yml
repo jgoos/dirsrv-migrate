@@ -45,6 +45,29 @@
     - item.1.from == inventory_hostname
     - dirsrv_repl_auth.method == 'SIMPLE'
 
+# Module-based path: ensure agreements without dsconf (feature-flagged)
+- name: Agreements | Ensure via module (feature-flagged)
+  vars:
+    suffix: "{{ item.0.key }}"
+    agree: "{{ item.1 }}"
+    target: "{{ dirsrv_repl_nodes[agree.to] }}"
+  directories.ds.ds_repl_agreement:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ suffix }}"
+    consumer_host: "{{ target.host }}"
+    consumer_port: "{{ target.port }}"
+    transport: "{{ target.protocol }}"
+    bind_method: "{{ dirsrv_repl_auth.method | lower }}"
+    bind_dn: "{{ dirsrv_repl_auth.bind_dn }}"
+    bind_pw: "{{ dirsrv_repl_auth.bind_password }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - dirsrv_repl_use_modules | bool
+    - item.1.from == inventory_hostname
+    - not ansible_check_mode
+
 - name: Agreements | List existing agreements for suffix
   vars:
     suffix: "{{ item.0.key }}"
@@ -69,6 +92,7 @@
     - value
   when:
     - item.1.from == inventory_hostname
+    - not dirsrv_repl_use_modules | bool
 
 - name: Snapshot | Ensure local artifacts dir exists (controller)
   ansible.builtin.file:
@@ -108,7 +132,7 @@
   delegate_to: localhost
   become: false
   loop: "{{ dirsrv_repl_agmt_list.results | default([]) }}"
-  when: dirsrv_debug | bool
+  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
 
 - name: Agreements | Create agreement when missing
   vars:
@@ -151,6 +175,7 @@
     - item.1.from == inventory_hostname
     - item.1.name not in (dirsrv_repl_agmt_list.stdout_lines | default([]))
     - not ansible_check_mode
+    - not dirsrv_repl_use_modules | bool
 
 - name: Snapshot | Agreement create command results (test-only)
   vars:
@@ -182,7 +207,7 @@
   delegate_to: localhost
   become: false
   loop: "{{ dirsrv_repl_agmt_create.results | default([]) }}"
-  when: dirsrv_debug | bool
+  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
 
 - name: Agreements | Warn if schedule configured with init=true (may pause)
   ansible.builtin.debug:
@@ -215,6 +240,7 @@
   when:
     - item.1.from == inventory_hostname
     - dirsrv_repl_schedule | length > 0
+    - not dirsrv_repl_use_modules | bool
 
 - name: Snapshot | Agreement schedule set results (test-only)
   vars:
@@ -245,7 +271,7 @@
   delegate_to: localhost
   become: false
   loop: "{{ dirsrv_repl_agmt_sched.results | default([]) }}"
-  when: dirsrv_debug | bool
+  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
 
 - name: Agreements | Apply fractional/strip lists
   ansible.builtin.command: >-
@@ -268,6 +294,7 @@
   when:
     - item.1.from == inventory_hostname
     - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
+    - not dirsrv_repl_use_modules | bool
 
 - name: Agreements | Ensure bind credentials/method (SIMPLE)
   vars:
@@ -291,6 +318,7 @@
     - item.1.from == inventory_hostname
     - dirsrv_repl_auth.method == 'SIMPLE'
     - not ansible_check_mode
+    - not dirsrv_repl_use_modules | bool
 
 - name: Snapshot | Agreement fractional/strip set results (test-only)
   vars:
@@ -321,7 +349,7 @@
   delegate_to: localhost
   become: false
   loop: "{{ dirsrv_repl_agmt_frac.results | default([]) }}"
-  when: dirsrv_debug | bool
+  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
 
 - name: Agreements | Start online init
   ansible.builtin.command:

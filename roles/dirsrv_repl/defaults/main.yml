@@ -91,3 +91,6 @@ dirsrv_artifact_root_effective: >-
 
 # Post-enable verification (guarded)
 dirsrv_repl_verify_post_enable: false
+
+# Use native modules for agreements/wait instead of dsconf/ldapsearch
+dirsrv_repl_use_modules: true

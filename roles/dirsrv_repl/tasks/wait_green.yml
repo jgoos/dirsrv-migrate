@@ -101,3 +101,16 @@
     - name: Fail | Agreements did not reach healthy state
       ansible.builtin.fail:
         msg: "Agreements not healthy; see .ansible/artifacts/<run>/<host>/cmd-wait-green-*.json snapshots for details"
+  when: not dirsrv_repl_use_modules | bool
+
+- name: Wait | Agreements healthy via module (feature-flagged)
+  directories.ds.ds_repl_wait:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ item }}"
+    all: true
+    stale_seconds: "{{ rhds_repl_wait_stale_seconds | default(300) }}"
+    steady_ok_polls: "{{ rhds_repl_wait_steady_ok_polls | default(3) }}"
+    poll_interval: "{{ rhds_repl_wait_delay | default(3) }}"
+    timeout: "{{ rhds_repl_wait_timeout | default(900) }}"
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when: dirsrv_repl_use_modules | bool
