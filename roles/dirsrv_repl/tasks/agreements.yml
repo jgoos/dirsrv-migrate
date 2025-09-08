@@ -133,7 +133,38 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
 
-  # Schedule application moved to tuning or future module support
+## Apply schedule via CLI until module supports it
+- name: Agreements | Apply schedule
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - set
+      - --suffix
+      - "{{ item.0.key }}"
+      - --schedule
+      - "{{ dirsrv_repl_schedule }}"
+      - "{{ item.1.name }}"
+  register: dirsrv_repl_agmt_sched
+  changed_when: >-
+    dirsrv_repl_agmt_sched.rc == 0 and (
+      'updated' in (dirsrv_repl_agmt_sched.stdout | lower | default('')) or
+      'modified' in (dirsrv_repl_agmt_sched.stdout | lower | default(''))
+    )
+  failed_when: dirsrv_repl_agmt_sched.rc != 0
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_schedule | length > 0
+    - not ansible_check_mode
 
 - name: Snapshot | Agreement schedule set results (test-only)
   vars:
@@ -163,14 +194,78 @@
   connection: local
   delegate_to: localhost
   become: false
-  loop: []
-  when: false
+  loop: "{{ dirsrv_repl_agmt_sched.results | default([]) }}"
+  when: dirsrv_debug | bool
 
-  # Fractional/strip configuration removed from agreements task (consider future module or tuning)
+## Fractional/strip lists via CLI until module supports them
+- name: Agreements | Apply fractional/strip lists
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - set
+      - "{{ item.1.name }}"
+      - --suffix
+      - "{{ item.0.key }}"
+      - "{{ '--frac-list' if dirsrv_repl_frac_list | length > 0 else omit }}"
+      - "{{ dirsrv_repl_frac_list | join(',') if dirsrv_repl_frac_list | length > 0 else omit }}"
+      - "{{ '--frac-list-total' if dirsrv_repl_frac_list_total | length > 0 else omit }}"
+      - "{{ dirsrv_repl_frac_list_total | join(',') if dirsrv_repl_frac_list_total | length > 0 else omit }}"
+      - "{{ '--strip-list' if dirsrv_repl_strip_list | length > 0 else omit }}"
+      - "{{ dirsrv_repl_strip_list | join(',') if dirsrv_repl_strip_list | length > 0 else omit }}"
+  register: dirsrv_repl_agmt_frac
+  changed_when: >-
+    dirsrv_repl_agmt_frac.rc == 0 and (
+      'updated' in (dirsrv_repl_agmt_frac.stdout | lower | default('')) or
+      'modified' in (dirsrv_repl_agmt_frac.stdout | lower | default(''))
+    )
+  failed_when: dirsrv_repl_agmt_frac.rc != 0
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
+    - not ansible_check_mode
+
+- name: Snapshot | Agreement fractional/strip set results (test-only)
+  vars:
+    res: "{{ item }}"
+    suffix: "{{ item.item.0.key }}"
+    agree: "{{ item.item.1.name }}"
+    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
+    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
+    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
+    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
+  ansible.builtin.copy:
+    content: |
+      {{ {
+          'host': inventory_hostname,
+          'step': 'agreement-attrs-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
+          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
+          'argv_redacted': __san_cmd,
+          'rc': res.rc | default(-1),
+          'stdout_excerpt': (res.stdout | default(''))[:2048],
+          'stderr_excerpt': (res.stderr | default(''))[:2048],
+          'duration_ms': __dur_ms
+        } | to_nice_json }}
+    dest: "{{ [__snap_dir, 'cmd-agreement-attrs-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
+    mode: "0640"
+  connection: local
+  delegate_to: localhost
+  become: false
+  loop: "{{ dirsrv_repl_agmt_frac.results | default([]) }}"
+  when: dirsrv_debug | bool
 
   # Bind credential enforcement handled by module ensure step
-
-  # Snapshot of fractional/strip changes removed with CLI path
 
 ### Online initialization using module
 - name: Agreements | Initialize agreements marked init=true (online)
