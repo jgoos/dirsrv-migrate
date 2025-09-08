@@ -127,30 +127,7 @@
       failed_when: false
       when: enable_suffix.changed | bool
 
-- name: Error Recovery | Handle DNS resolution failures
-  block:
-    - name: Error Recovery | Test DNS resolution for all targets
-      ansible.builtin.command:
-        argv:
-          - getent
-          - hosts
-          - "{{ dirsrv_repl_nodes[item.1.to].host }}"
-      register: dns_resolution_test
-      changed_when: false
-      failed_when: false
-      with_subelements:
-        - "{{ dirsrv_repl_agreements | dict2items }}"
-        - value
-      when: item.1.from == inventory_hostname
-
-    - name: Error Recovery | Add missing host entries
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        line: "{{ dirsrv_repl_nodes[item.1.to].host }} {{ dirsrv_repl_nodes[item.1.to].host }}"
-        state: present
-      when:
-        - dns_resolution_test.rc != 0
-        - item.1.from == inventory_hostname
+  # DNS resolution hacks removed; DNS is now gated in preflight
 
 - name: Error Recovery | Handle LDAPI socket issues
   block:

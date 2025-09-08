@@ -1,4 +1,4 @@
-- name: Monitor | Collect replication info via module (feature-flagged)
+- name: Monitor | Collect replication info via module
   vars:
     suffix: "{{ item }}"
   directories.ds.ds_repl_info:
@@ -8,7 +8,7 @@
   loop: "{{ dirsrv_repl_suffixes }}"
   changed_when: false
   failed_when: false
-  when: dirsrv_repl_use_modules | bool
+  when: dirsrv_repl_suffixes | length > 0
 
 - name: Monitor | Show module info (concise)
   ansible.builtin.debug:
@@ -17,7 +17,7 @@
       agmts={{ (item.agreements | map(attribute='host') | list) | default([]) }}
   loop: "{{ dirsrv_repl_info_results.results | default([]) }}"
   when:
-    - dirsrv_repl_use_modules | bool
+    - dirsrv_repl_suffixes | length > 0
 
 - name: Monitor | Write module info snapshots (test-only)
   vars:
@@ -32,43 +32,9 @@
   become: false
   loop: "{{ dirsrv_repl_info_results.results | default([]) }}"
   when:
-    - dirsrv_repl_use_modules | bool
     - dirsrv_debug | bool
 
-- name: Monitor | replication monitor snapshot (fallback)
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    replication monitor
-  register: dirsrv_repl_monitor
-  changed_when: false
-  failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  when: not dirsrv_repl_use_modules | bool
-
-- name: Monitor | Show monitor snapshot (concise) (fallback)
-  ansible.builtin.debug:
-    var: dirsrv_repl_monitor.stdout
-  when:
-    - not dirsrv_repl_use_modules | bool
-    - dirsrv_repl_monitor.stdout is defined
-
-- name: Monitor | Agreement status per local agreements (fallback)
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt status --suffix "{{ item_suffix }}" {{ item_agmt.name }}
-  vars:
-    item_suffix: "{{ item.0.key }}"
-    item_agmt: "{{ item.1 }}"
-  register: dirsrv_repl_status
-  changed_when: false
-  failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - not dirsrv_repl_use_modules | bool
-    - item_agmt.from == inventory_hostname
+  # CLI fallbacks removed in favor of module
 
 - name: Monitor | ds-replcheck (optional)
   when: dirsrv_repl_run_replcheck | bool

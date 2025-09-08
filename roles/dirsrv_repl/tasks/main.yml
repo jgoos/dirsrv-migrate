@@ -1,4 +1,9 @@
 ---
+- name: Preflight | Include common preflight (tools, ldapi, DNS/TCP gating)
+  ansible.builtin.include_role:
+    name: dirsrv_common
+    tasks_from: preflight
+
 - name: Preflight | Ensure dsconf/dsctl available
   block:
     - name: Preflight | Stat dsconf candidates
