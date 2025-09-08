@@ -1,0 +1,12 @@
+---
+- name: Remove replication agreements and optionally disable replication
+  hosts: all
+  gather_facts: false
+  become: true
+  vars:
+    # Set true to disable replication after agreements are removed
+    dirsrv_repl_disable_after_teardown: false
+  roles:
+    - role: dirsrv_repl
+      tasks_from: teardown.yml
+

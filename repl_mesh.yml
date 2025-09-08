@@ -2,7 +2,7 @@
 # Configure replication: 2 masters (suppliers) and 2 replicas (consumers)
 # Note: Keys under dirsrv_repl_nodes must match your inventory hostnames.
 
- - name: Configure multi-master + dual-consumer replication
+- name: Configure multi-master + dual-consumer replication
   hosts: all
   serial: 1
   gather_facts: false
