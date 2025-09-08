@@ -1,0 +1,49 @@
+---
+# Replication teardown: remove local-outbound agreements and optionally disable replication
+
+- name: Teardown | Validate inputs
+  ansible.builtin.assert:
+    that:
+      - dirsrv_repl_suffixes is defined
+      - dirsrv_repl_agreements is defined
+    fail_msg: "dirsrv_repl_suffixes and dirsrv_repl_agreements must be defined for teardown"
+
+- name: Teardown | Remove local agreements via module
+  vars:
+    suffix: "{{ item.0.key }}"
+    agree: "{{ item.1 }}"
+    target: "{{ dirsrv_repl_nodes[agree.to] }}"
+  directories.ds.ds_repl_agreement:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ suffix }}"
+    consumer_host: "{{ target.host }}"
+    consumer_port: "{{ target.port }}"
+    name: "{{ agree.name }}"
+    transport: "{{ target.protocol }}"
+    state: absent
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - agree.from == inventory_hostname
+    - not ansible_check_mode
+
+- name: Teardown | Optionally disable replication (best-effort)
+  vars:
+    suffix: "{{ item }}"
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    replication set --suffix "{{ suffix }}" --replica-enabled off
+  register: dirsrv_repl_disable
+  changed_when: >-
+    dirsrv_repl_disable.rc == 0 and (
+      'updated' in (dirsrv_repl_disable.stdout | lower | default('')) or
+      'modified' in (dirsrv_repl_disable.stdout | lower | default(''))
+    )
+  failed_when: false
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  loop: "{{ dirsrv_repl_suffixes }}"
+  when:
+    - dirsrv_repl_disable_after_teardown | default(false) | bool
+    - not ansible_check_mode
+
