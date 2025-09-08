@@ -111,6 +111,40 @@
 - name: Include enable tasks
   ansible.builtin.include_tasks: enable.yml
 
+# Mesh topology synchronization: ensure suppliers have consistent generation IDs
+- name: Mesh | Synchronize supplier generation IDs
+  block:
+    - name: Mesh | Identify primary supplier (first in init order)
+      ansible.builtin.set_fact:
+        dirsrv_repl_primary_supplier: "{{ (dirsrv_repl_agreements[item] | selectattr('init', 'equalto', true) | first).from }}"
+      loop: "{{ dirsrv_repl_suffixes }}"
+      when: dirsrv_repl_suffixes | length > 0
+      run_once: true
+      delegate_to: localhost
+      vars:
+        ansible_become: false
+
+    - name: Mesh | Wait for primary supplier to be ready
+      ansible.builtin.wait_for:
+        port: "{{ dirsrv_repl_nodes[dirsrv_repl_primary_supplier].port }}"
+        host: "{{ dirsrv_repl_nodes[dirsrv_repl_primary_supplier].host }}"
+        delay: 5
+        timeout: 60
+      when: 
+        - inventory_hostname != dirsrv_repl_primary_supplier
+        - dirsrv_repl_this_node.role in ['supplier', 'hub']
+        - dirsrv_repl_primary_supplier is defined
+
+    - name: Mesh | Check if this is a secondary supplier
+      ansible.builtin.set_fact:
+        dirsrv_repl_is_secondary_supplier: "{{ inventory_hostname != dirsrv_repl_primary_supplier and dirsrv_repl_this_node.role in ['supplier', 'hub'] }}"
+      when: dirsrv_repl_primary_supplier is defined
+
+  when: 
+    - dirsrv_repl_suffixes | length > 0
+    - dirsrv_repl_agreements is defined
+    - dirsrv_repl_agreements | length > 0
+
 - name: Include agreements tasks
   ansible.builtin.include_tasks: agreements.yml
 

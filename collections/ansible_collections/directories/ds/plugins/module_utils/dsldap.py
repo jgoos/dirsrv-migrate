@@ -45,6 +45,14 @@ def build_ldapi_url(instance: str, base_dir: str = "/run") -> str:
     return f"ldapi://{enc}"
 
 
+def check_socket_exists(socket_path: str) -> bool:
+    """Check if LDAPI socket file exists and is accessible."""
+    try:
+        return os.path.exists(socket_path) and os.access(socket_path, os.R_OK)
+    except (OSError, IOError):
+        return False
+
+
 @dataclass
 class LdapConnParams:
     instance: str
@@ -68,8 +76,18 @@ class DsLdap:
         self.params = params
         self.urls: List[str] = []
         if params.use_ldapi:
-            self.urls.append(build_ldapi_url(params.instance, "/run"))
-            self.urls.append(build_ldapi_url(params.instance, "/data/run"))
+            # Check socket existence before adding URLs
+            run_socket = f"/run/slapd-{params.instance}.socket"
+            data_socket = f"/data/run/slapd-{params.instance}.socket"
+            
+            if check_socket_exists(run_socket):
+                self.urls.append(build_ldapi_url(params.instance, "/run"))
+            elif check_socket_exists(data_socket):
+                self.urls.append(build_ldapi_url(params.instance, "/data/run"))
+            else:
+                # Fallback: try both paths anyway (for compatibility)
+                self.urls.append(build_ldapi_url(params.instance, "/run"))
+                self.urls.append(build_ldapi_url(params.instance, "/data/run"))
         if params.ldaps_host:
             self.urls.append(f"ldaps://{params.ldaps_host}:{params.ldaps_port}")
 

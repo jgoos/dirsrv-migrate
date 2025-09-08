@@ -4,6 +4,28 @@
     msg: "No replication agreements defined; skipping"
   when: (dirsrv_repl_agreements | length | int) == 0
 
+- name: Agreements | Health check - verify LDAPI connectivity
+  ansible.builtin.command:
+    argv:
+      - ldapsearch
+      - -Y
+      - EXTERNAL
+      - -H
+      - "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+      - -s
+      - base
+      - -b
+      - ""
+      - "1.1"
+  register: dirsrv_repl_ldapi_health
+  changed_when: false
+  failed_when: dirsrv_repl_ldapi_health.rc != 0
+  retries: 10
+  delay: 2
+  when:
+    - dirsrv_repl_agreements | length | int > 0
+    - not ansible_check_mode
+
 - name: Agreements | Validate target nodes exist
   ansible.builtin.assert:
     that:
@@ -57,6 +79,7 @@
     suffix: "{{ suffix }}"
     consumer_host: "{{ target.host }}"
     consumer_port: "{{ target.port }}"
+    name: "{{ agree.name }}"
     transport: "{{ target.protocol }}"
     bind_method: "{{ dirsrv_repl_auth.method | lower }}"
     bind_dn: "{{ dirsrv_repl_auth.bind_dn }}"
@@ -379,6 +402,7 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
+    - not (dirsrv_repl_is_secondary_supplier | default(false) | bool)
 
 - name: Agreements | Poll init-status to completion (online mode)
   vars:
@@ -388,7 +412,10 @@
     repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
   register: dirsrv_repl_init_status
   changed_when: false
-  failed_when: dirsrv_repl_init_status.rc != 0
+  failed_when: >-
+    dirsrv_repl_init_status.rc != 0 and
+    'unknown' not in (dirsrv_repl_init_status.stdout | lower | default('')) and
+    'can\'t contact' not in (dirsrv_repl_init_status.stderr | lower | default(''))
   until: >-
     (dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized')
   retries: "{{ max_tries }}"
@@ -402,6 +429,61 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
+    - not (dirsrv_repl_is_secondary_supplier | default(false) | bool)
+
+# Second phase: Initialize secondary suppliers after primary is ready
+- name: Agreements | Start online init (secondary suppliers)
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - init
+      - --suffix
+      - "{{ item.0.key }}"
+      - "{{ item.1.name }}"
+  register: dirsrv_repl_init_start_secondary
+  changed_when: dirsrv_repl_init_start_secondary.rc == 0
+  failed_when: false
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  throttle: 1
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_init_mode == 'online'
+    - (item.1.init | default(false)) | bool
+    - not ansible_check_mode
+    - (dirsrv_repl_is_secondary_supplier | default(false) | bool)
+
+- name: Agreements | Poll init-status to completion (secondary suppliers)
+  vars:
+    max_tries: 30
+  ansible.builtin.command: >-
+    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
+    repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
+  register: dirsrv_repl_init_status_secondary
+  changed_when: false
+  failed_when: dirsrv_repl_init_status_secondary.rc != 0
+  until: >-
+    (dirsrv_repl_init_status_secondary.stdout | lower | default('')) is search('successfully initialized')
+  retries: "{{ max_tries }}"
+  delay: 5
+  throttle: 1
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
+  when:
+    - item.1.from == inventory_hostname
+    - dirsrv_repl_init_mode == 'online'
+    - (item.1.init | default(false)) | bool
+    - not ansible_check_mode
+    - (dirsrv_repl_is_secondary_supplier | default(false) | bool)
 
 - name: Snapshot | Agreement init-status poll results (test-only)
   vars:
@@ -485,7 +567,10 @@
     repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
   register: dirsrv_repl_final_status
   changed_when: false
-  failed_when: dirsrv_repl_final_status.rc != 0
+  failed_when: >-
+    dirsrv_repl_final_status.rc != 0 and
+    'unknown' not in (dirsrv_repl_final_status.stdout | lower | default('')) and
+    'can\'t contact' not in (dirsrv_repl_final_status.stderr | lower | default(''))
   until: >-
     (dirsrv_repl_final_status.stdout | lower | default('')) is search('successfully initialized')
   retries: "{{ max_tries }}"
