@@ -109,9 +109,15 @@ def _get_state(module, params):
             return False, None
         data = json.loads(text)
         attrs = data.get('attrs', {}) if isinstance(data, dict) else {}
-        # Minimal: consider enabled when nsds5ReplicaType exists
-        enabled = bool(attrs.get('nsds5ReplicaType'))
-        details = dict(attrs=attrs)
+        # Normalize keys to lowercase because dsconf JSON uses lowercase attribute names
+        attrs_lc = { (k.lower() if isinstance(k, str) else k): v for k, v in attrs.items() } if isinstance(attrs, dict) else {}
+        # Consider enabled when nsds5replicatype exists
+        enabled = 'nsds5replicatype' in attrs_lc and bool(attrs_lc.get('nsds5replicatype'))
+        # Return a compact details map
+        details = dict(
+            replica_type=attrs_lc.get('nsds5replicatype', [None])[0] if isinstance(attrs_lc.get('nsds5replicatype'), list) else attrs_lc.get('nsds5replicatype'),
+            replica_id=attrs_lc.get('nsds5replicaid', [None])[0] if isinstance(attrs_lc.get('nsds5replicaid'), list) else attrs_lc.get('nsds5replicaid'),
+        )
         return enabled, details
     except Exception:
         return False, None
@@ -152,6 +158,10 @@ def run_module():
 
     cp = _run(argv, timeout=p.get('op_timeout', 30))
     if cp.returncode != 0:
+        stderr = (cp.stderr.decode(errors='ignore') or '').lower()
+        # Idempotence guard: tolerate already-enabled state
+        if 'already enabled' in stderr or 'replication is already enabled' in stderr:
+            module.exit_json(changed=False, enabled=True)
         module.fail_json(msg="dsconf replication enable failed", rc=cp.returncode, stderr=cp.stderr.decode(errors='ignore'))
 
     # Post-check

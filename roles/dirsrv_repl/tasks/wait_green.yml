@@ -1,7 +1,8 @@
 ---
 - name: Wait | Skip if no agreements
-  ansible.builtin.meta: noop
-  when: dirsrv_repl_agreements | length == 0
+  ansible.builtin.debug:
+    msg: "No replication agreements defined; skipping wait"
+  when: (dirsrv_repl_agreements | length | int) == 0
 
 - name: Wait | Compute local dsconf URL when missing
   ansible.builtin.set_fact:
@@ -32,8 +33,8 @@
         agmt_suffix: "{{ item.0.key }}"
         agmt: "{{ item.1 }}"
         tries: "{{ rhds_repl_wait_max_retries | default(120) }}"
-        delay: "{{ rhds_repl_wait_delay | default(3) }}"
-        suffix_dn_esc: "cn={{ agmt_suffix | replace('=','\\3D') }},cn=mapping tree,cn=config"
+        poll_delay: "{{ rhds_repl_wait_delay | default(3) }}"
+        suffix_dn_esc: "cn={{ agmt_suffix | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config"
         agmt_dn: "cn={{ agmt.name }},cn=replica,{{ suffix_dn_esc }}"
         __ldap_auth: >-
           {{ ['-Y','EXTERNAL'] if (dirsrv_repl_conn_url | default('') | regex_search('^ldapi://')) else ['-x','-D', dirsrv_dm_dn, '-w', dirsrv_password] }}
@@ -43,7 +44,7 @@
       ansible.builtin.command:
         argv: "{{ __argv }}"
       register: out
-      no_log: true
+      no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
       changed_when: false
       failed_when: false
       until: >-
@@ -53,7 +54,7 @@
         )
         and not ((out.stdout | default('') | lower) is search('updateinprogress: true'))
       retries: "{{ tries }}"
-      delay: "{{ delay }}"
+      delay: "{{ poll_delay }}"
       with_subelements:
         - "{{ dirsrv_repl_agreements | dict2items }}"
         - value
@@ -101,7 +102,7 @@
     - name: Fail | Agreements did not reach healthy state
       ansible.builtin.fail:
         msg: "Agreements not healthy; see .ansible/artifacts/<run>/<host>/cmd-wait-green-*.json snapshots for details"
-  when: not dirsrv_repl_use_modules | bool
+  when: not (dirsrv_repl_use_modules | default(true) | bool)
 
 - name: Wait | Agreements healthy via module (feature-flagged)
   directories.ds.ds_repl_wait:
@@ -112,5 +113,7 @@
     steady_ok_polls: "{{ rhds_repl_wait_steady_ok_polls | default(3) }}"
     poll_interval: "{{ rhds_repl_wait_delay | default(3) }}"
     timeout: "{{ rhds_repl_wait_timeout | default(900) }}"
+    debug: "{{ dirsrv_debug | default(false) }}"
+    log_every: "{{ 1 if (dirsrv_debug | default(false)) else 5 }}"
   loop: "{{ dirsrv_repl_suffixes }}"
-  when: dirsrv_repl_use_modules | bool
+  when: (dirsrv_repl_use_modules | default(true) | bool)

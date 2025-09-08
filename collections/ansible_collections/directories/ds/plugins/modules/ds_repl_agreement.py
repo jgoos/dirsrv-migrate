@@ -164,7 +164,7 @@ def run_module():
     filter_hp = f"(&(objectClass=nsDS5ReplicationAgreement)(nsds5ReplicaHost={p['consumer_host']})(nsds5ReplicaPort={p['consumer_port']}))"
     try:
         existing = client.search(replica_dn, 'one', filter_hp, [
-            'cn', 'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN',
+            'cn', 'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN', 'nsds5ReplicaEnabled',
             'nsds5ReplicaTransportInfo', 'nsds5ReplicaBackoffMin', 'nsds5ReplicaBackoffMax', 'nsds5ReplicaPurgeDelay', 'nsds5ReplicaBindMethod'
         ])
     except Exception:
@@ -220,6 +220,8 @@ def run_module():
             add_attrs.update(target_attrs)
             try:
                 client.add(agmt_dn, add_attrs)
+                # Enable the agreement after creation
+                client.modify(agmt_dn, [('replace', 'nsds5ReplicaEnabled', 'on')])
             except dsldap.DsLdapError as e:
                 module.fail_json(msg=f"Failed to create agreement {agmt_dn}", hint=getattr(e, 'hint', None))
         changed = True
@@ -234,6 +236,11 @@ def run_module():
         cur_v = _first(cur.get(k))
         if cur_v is None or str(cur_v) != str(v):
             changes.append(('replace', k, v))
+    
+    # Check if agreement is enabled
+    cur_enabled = _first(cur.get('nsds5ReplicaEnabled'))
+    if cur_enabled is None or cur_enabled.lower() not in ('on', 'true', 'yes', '1'):
+        changes.append(('replace', 'nsds5ReplicaEnabled', 'on'))
 
     if changes:
         if not module.check_mode:

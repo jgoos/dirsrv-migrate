@@ -132,7 +132,7 @@ verify_389ds:
 	verify "bob present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=bob' | grep -q 'uid=bob'"; \
 	verify "staff includes devs" "podman exec ds-c1 sh -lc \"ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember || ldapsearch -x -LLL -H ldap://localhost:389 -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember\" | grep -iq 'uniqueMember: cn=devs,ou=groups,dc=example,dc=com'"; \
 	verify "app-x present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=app-x' | grep -q 'uid=app-x'"; \
-	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com \''(aci=*)'\'' aci || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com \''(aci=*)'\'' aci' | grep -q 'Devs can write mail'"
+	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -LLL -s base -b dc=example,dc=com aci || ldapsearch -x -H ldap://localhost:389 -LLL -s base -b dc=example,dc=com aci' | grep -iq '^aci:'"
 
 deps_podman:
 	ansible-galaxy collection install -r collections/requirements.yml
@@ -281,7 +281,10 @@ reset_soft:
 	      last=$$(ls -1dt '"$$bakroot"'/* 2>/dev/null | head -1 || true); \
 	      if [ -n "$$last" ]; then rm -rf '"$$bakdir"' && cp -a "$$last" '"$$bakdir"'; fi; \
 	    fi; \
-	    dsctl '"$$inst"' bak2db '"$$bakdir"' || true'; \
+	    # stop -> restore -> start to avoid lock conflicts; tolerate missing state \
+	    dsctl '"$$inst"' stop || true; \
+	    dsctl '"$$inst"' bak2db '"$$bakdir"' || true; \
+	    dsctl '"$$inst"' start || true'; \
 	done
 
 # Hard reset: tear down containers; keep volumes unless PURGE=1

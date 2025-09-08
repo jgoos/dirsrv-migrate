@@ -37,3 +37,9 @@ dirsrv_repl_agreements:
 
 dirsrv_repl_set_release_timeout: false
 dirsrv_repl_run_replcheck: false
+
+# Tighter wait thresholds for fast lab runs
+rhds_repl_wait_stale_seconds: 300
+rhds_repl_wait_steady_ok_polls: 2
+rhds_repl_wait_delay: 2
+rhds_repl_wait_timeout: 120

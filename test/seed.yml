@@ -230,6 +230,7 @@
           connection: local
           delegate_to: localhost
           become: false
+
         - name: Write command snapshot (seed ldapadd)
           ansible.builtin.copy:
             content: "{{ __payload }}"
@@ -238,3 +239,48 @@
           connection: local
           delegate_to: localhost
           become: false
+
+    - name: Ensure base ACIs present on suffix (idempotent)
+      block:
+        - name: Check for existing ACI on base
+          ansible.builtin.command:
+            argv:
+              - ldapsearch
+              - -Y
+              - EXTERNAL
+              - -LLL
+              - -H
+              - "{{ ldapi_uri }}"
+              - -s
+              - base
+              - -b
+              - "{{ suffix }}"
+              - aci
+          register: base_aci
+          changed_when: false
+          failed_when: false
+
+        - name: Add standard ACIs to base when missing
+          ansible.builtin.shell: |
+            cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ ldapi_uri }}"
+            dn: {{ suffix }}
+            changetype: modify
+            add: aci
+            aci: (target="ldap:///ou=people,{{ suffix }}")(targetattr="cn || sn || givenName || mail || uid") (version 3.0; acl "Allow anonymous read on basic attrs"; allow (read, search, compare) (userdn = "ldap:///anyone"); )
+            -
+            add: aci
+            aci: (targetattr = "telephoneNumber || mobile") (version 3.0; acl "Self can edit phone numbers"; allow (write) (userdn = "ldap:///self"); )
+            -
+            add: aci
+            aci: (target="ldap:///ou=people,{{ suffix }}")(targetattr = "mail") (version 3.0; acl "Devs can write mail"; allow (write) (groupdn = "ldap:///cn=devs,ou=groups,{{ suffix }}"); )
+            LDIF
+          args:
+            executable: /bin/sh
+          register: add_aci
+          changed_when: add_aci.rc == 0
+          failed_when: false
+          when: not (base_aci.stdout | regex_search('^aci:', multiline=True))
+        - name: Debug | Base ACI status (test-only)
+          ansible.builtin.debug:
+            msg: "Base aci present? {{ (base_aci.stdout | regex_search('^aci:', multiline=True)) is not none }}"
+          when: (dirsrv_debug | default(false)) | bool

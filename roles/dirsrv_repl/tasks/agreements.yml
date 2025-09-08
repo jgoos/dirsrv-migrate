@@ -1,7 +1,8 @@
 ---
 - name: Agreements | Skip if no matrix defined
-  ansible.builtin.meta: noop
-  when: dirsrv_repl_agreements | length == 0
+  ansible.builtin.debug:
+    msg: "No replication agreements defined; skipping"
+  when: (dirsrv_repl_agreements | length | int) == 0
 
 - name: Agreements | Validate target nodes exist
   ansible.builtin.assert:
@@ -86,7 +87,7 @@
   register: dirsrv_repl_agmt_list
   changed_when: false
   failed_when: dirsrv_repl_agmt_list.rc != 0
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -167,7 +168,7 @@
     dirsrv_repl_agmt_create.rc != 0 and (
       'already exists' not in ((dirsrv_repl_agmt_create.stdout | lower | default('')) + ' ' + (dirsrv_repl_agmt_create.stderr | lower | default('')))
     )
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -233,7 +234,7 @@
       'modified' in (dirsrv_repl_agmt_sched.stdout | lower | default(''))
     )
   failed_when: dirsrv_repl_agmt_sched.rc != 0
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -287,7 +288,7 @@
       'modified' in (dirsrv_repl_agmt_frac.stdout | lower | default(''))
     )
   failed_when: dirsrv_repl_agmt_frac.rc != 0
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -310,7 +311,7 @@
       'modified' in (dirsrv_repl_agmt_bind.stdout | lower | default(''))
     )
   failed_when: dirsrv_repl_agmt_bind.rc != 0
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
@@ -368,7 +369,7 @@
   register: dirsrv_repl_init_start
   changed_when: dirsrv_repl_init_start.rc == 0
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
@@ -465,7 +466,7 @@
   register: dirsrv_repl_final_init
   changed_when: dirsrv_repl_final_init.rc == 0
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"

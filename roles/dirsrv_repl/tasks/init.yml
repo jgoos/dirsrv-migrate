@@ -1,7 +1,4 @@
 ---
-- name: Init | Skip when online mode
-  ansible.builtin.meta: noop
-  when: dirsrv_repl_init_mode != 'offline'
 
 - name: Init | Validate offline LDIF source provided when offline mode
   ansible.builtin.assert:
@@ -45,4 +42,3 @@
     - dirsrv_repl_init_mode == 'offline'
     - dirsrv_manage_service | bool
     - not ansible_check_mode
-

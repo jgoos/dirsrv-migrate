@@ -43,3 +43,9 @@ rhds_disable_referrals: true
 
 # Enable post-enable verification in role (bind + config checks)
 dirsrv_repl_verify_post_enable: true
+
+# Tighter wait thresholds for fast lab runs
+rhds_repl_wait_stale_seconds: 60
+rhds_repl_wait_steady_ok_polls: 2
+rhds_repl_wait_delay: 2
+rhds_repl_wait_timeout: 240
