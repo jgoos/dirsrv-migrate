@@ -11,7 +11,7 @@
       - -Y
       - EXTERNAL
       - -H
-      - "ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket"
+      - "{{ dirsrv_ldapi_uri }}"
       - -s
       - base
       - -b
@@ -25,6 +25,7 @@
   when:
     - dirsrv_repl_agreements | length | int > 0
     - not ansible_check_mode
+    - dirsrv_ldapi_uri | default('') | length > 0
 
 - name: Agreements | Validate target nodes exist
   ansible.builtin.assert:
