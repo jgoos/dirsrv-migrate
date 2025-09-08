@@ -1,0 +1,3 @@
+diff a/collections/ansible_collections/directories/ds/molecule/4node/converge.yml b/collections/ansible_collections/directories/ds/molecule/4node/converge.yml	(rejected hunks)
+@@ -26 +25,0 @@
+-    dirsrv_repl_use_modules: true

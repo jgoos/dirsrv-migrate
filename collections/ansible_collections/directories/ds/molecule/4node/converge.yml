@@ -23,7 +23,6 @@
   vars_files:
     - ../../../../../..//test/repl_mesh_vars.yml
   vars:
-    dirsrv_repl_use_modules: true
     dirsrv_dm_dn: "cn=Directory Manager"
   roles:
     - role: dirsrv_repl

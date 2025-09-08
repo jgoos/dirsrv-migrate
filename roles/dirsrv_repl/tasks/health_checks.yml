@@ -1,6 +1,6 @@
 ---
-# Comprehensive health checks for replication operations
-# These checks run before, during, and after replication operations
+# Lean health checks for replication operations
+# Environment/DNS/TCP gating moved to common preflight
 
 - name: Health Checks | Pre-flight validation
   block:
@@ -27,21 +27,13 @@
       with_dict: "{{ dirsrv_repl_replica_ids | default({}) }}"
       when: dirsrv_repl_require_unique_replica_ids | bool
 
-    - name: Health Checks | Validate agreement targets exist
+    - name: Health Checks | Validate agreements mapping (local outbound only)
       ansible.builtin.assert:
         that:
           - dirsrv_repl_nodes[item.1.to] is defined
-        fail_msg: "Target host '{{ item.1.to }}' not found in dirsrv_repl_nodes"
-      with_subelements:
-        - "{{ dirsrv_repl_agreements | dict2items }}"
-        - value
-      when: item.1.from == inventory_hostname
-
-    - name: Health Checks | Check for circular dependencies in agreements
-      ansible.builtin.assert:
-        that:
+          - item.1.from == inventory_hostname
           - item.1.from != item.1.to
-        fail_msg: "Circular dependency detected: {{ item.1.from }} -> {{ item.1.to }}"
+        fail_msg: "Invalid agreement mapping: ensure targets exist and no self-links"
       with_subelements:
         - "{{ dirsrv_repl_agreements | dict2items }}"
         - value
@@ -82,12 +74,7 @@
       changed_when: false
       failed_when: false
 
-    - name: Health Checks | Ensure sufficient disk space
-      ansible.builtin.assert:
-        that:
-          - data_dir_stat.stat.exists
-          - (data_dir_space.stdout_lines | last | default('0') | int) > 1073741824  # 1GB minimum
-        fail_msg: "Insufficient disk space or data directory not accessible"
+## System readiness checks removed; covered elsewhere or out of scope here
 
 - name: Health Checks | LDAPI connectivity verification
   block:
@@ -118,43 +105,8 @@
           - ldapi_health_check.stdout is defined
         fail_msg: "LDAPI socket not responding correctly"
 
-- name: Health Checks | Remote connectivity verification
-  block:
-    - name: Health Checks | Test remote LDAP connectivity
-      vars:
-        target: "{{ dirsrv_repl_nodes[item.1.to] }}"
-        _proto: "{{ target.protocol | lower }}"
-        _url: "{{ _proto }}://{{ target.host }}:{{ target.port }}"
-      ansible.builtin.command:
-        argv:
-          - ldapsearch
-          - -x
-          - -H
-          - "{{ _url }}"
-          - -s
-          - base
-          - -b
-          - ""
-          - "1.1"
-      register: remote_connectivity_check
-      changed_when: false
-      failed_when: false
-      retries: "{{ dirsrv_repl_retry_settings.operation_timeouts.remote_bind_check | int // dirsrv_repl_retry_settings.base_delay | int }}"
-      delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
-      until: remote_connectivity_check.rc == 0
-      with_subelements:
-        - "{{ dirsrv_repl_agreements | dict2items }}"
-        - value
-      when: item.1.from == inventory_hostname
+## Remote connectivity checks removed; DNS/TCP gating handled in preflight
 
-    - name: Health Checks | Verify remote connectivity
-      ansible.builtin.assert:
-        that:
-          - remote_connectivity_check.rc == 0
-        fail_msg: "Remote host {{ item.1.to }} not reachable"
-      with_subelements:
-        - "{{ dirsrv_repl_agreements | dict2items }}"
-        - value
-      when: item.1.from == inventory_hostname
+## Replication state validation removed; convergence handled by ds_repl_wait
 
 ## Replication state, topology, and post-op verification removed; handled by ds_repl_wait

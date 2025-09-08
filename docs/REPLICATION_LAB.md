@@ -27,5 +27,4 @@ make test_repl_mesh
 
 Troubleshooting
 - macOS Podman warnings like "proxy already running": re‑run targets — the Makefile force‑removes stale containers and avoids host ports.
-- If dsconf can’t find the suffix on a consumer, the role will ensure it before enabling replication.
-
+- Suffixes must exist before enabling replication. The replication role asserts presence and will fail fast if a suffix is missing; create it during migration/seed steps.
