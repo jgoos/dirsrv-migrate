@@ -12,7 +12,7 @@
   failed_when: false
   no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   loop: "{{ dirsrv_repl_suffixes }}"
-  when: dirsrv_repl_set_release_timeout | bool
+  when: dirsrv_repl_set_release_timeout | bool and (not ansible_check_mode)
 
 - name: Tuning | Configure changelog purge (max-age) per suffix
   ansible.builtin.command: >-
@@ -27,7 +27,7 @@
   failed_when: false
   no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   loop: "{{ dirsrv_repl_suffixes }}"
-  when: dirsrv_repl_changelog.purge_enabled | bool
+  when: dirsrv_repl_changelog.purge_enabled | bool and (not ansible_check_mode)
 
 - name: Tuning | Changelog encryption workflow note
   ansible.builtin.debug:
