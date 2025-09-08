@@ -283,9 +283,9 @@ test_repl_idempotent: deps_podman
 	# Syntax checks
 	ansible-playbook --syntax-check test/repl_mesh.yml; \
 	# First run
-	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-1.log; \
+	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-1.log || { echo "First run failed (see .ansible/test_logs/idempotence-1.log)" >&2; exit 1; }; \
 	# Second run (should be idempotent)
-	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-2.log; \
+	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-2.log || { echo "Second run failed (see .ansible/test_logs/idempotence-2.log)" >&2; exit 1; }; \
 	# Assert no changes in second recap
 	if grep -A2 -E "PLAY RECAP" .ansible/test_logs/idempotence-2.log | grep -E "changed=[1-9]"; then \
 	  echo "Idempotence failed: second run had changes" >&2; exit 1; \
