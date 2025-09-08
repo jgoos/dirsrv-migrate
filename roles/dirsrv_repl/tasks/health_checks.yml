@@ -64,7 +64,7 @@
 
     - name: Health Checks | Check data directory status
       ansible.builtin.stat:
-        path: "{{ dirsrv_data_dir | default('/var/lib/dirsrv') }}"
+        path: "{{ dirsrv_data_dir | default(dirsrv_paths.data_dir) }}"
       register: data_dir_stat
 
     - name: Health Checks | Query free space for data directory

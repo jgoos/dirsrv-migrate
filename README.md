@@ -36,6 +36,30 @@ Automates export/import migrations from Red Hat Directory Server (389‑DS) RHDS
 - Optional local testing: Podman and `containers.podman` collection.
 
 
+## Environment Variables (Lab/Compose)
+
+For the Podman Compose lab environment, you can customize container configuration using environment variables:
+
+```bash
+# Directory Server password
+export DIRSRV_PASSWORD=your_password
+
+# Container IP addresses (optional - defaults provided)
+export DSNET_S1_IP=10.89.1.6
+export DSNET_S2_IP=10.89.1.8
+export DSNET_C1_IP=10.89.1.4
+export DSNET_C2_IP=10.89.1.5
+
+# Run compose with custom settings
+make up_389ds
+```
+
+Or create a `.env` file in the `compose/` directory:
+```bash
+cp compose/env.example compose/.env
+# Edit compose/.env with your values
+```
+
 ## Quick Start (real servers)
 1) Define inventory and mapping
 - Edit `inventory.yml` to list your RHDS 11 sources and RHDS 12 targets.

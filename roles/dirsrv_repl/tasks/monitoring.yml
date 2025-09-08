@@ -35,7 +35,7 @@
     - name: Monitoring | Store baseline metrics
       ansible.builtin.copy:
         content: "{{ baseline_metrics | to_nice_json }}"
-        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/baseline_{{ inventory_hostname }}.json"
+        dest: "{{ dirsrv_artifact_root_effective | default(dirsrv_paths.tmp_dir) }}/baseline_{{ inventory_hostname }}.json"
         mode: "0644"
       when: dirsrv_debug | bool
 
@@ -163,7 +163,7 @@
     - name: Monitoring | Save health report
       ansible.builtin.copy:
         content: "{{ health_report | to_nice_json }}"
-        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/health_report_{{ inventory_hostname }}.json"
+        dest: "{{ dirsrv_artifact_root_effective | default(dirsrv_paths.tmp_dir) }}/health_report_{{ inventory_hostname }}.json"
         mode: "0644"
       when: dirsrv_debug | bool
 
@@ -253,6 +253,6 @@
           
           Health Report:
           {{ health_report | to_nice_json }}
-        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/comprehensive_diagnostics_{{ inventory_hostname }}.txt"
+        dest: "{{ dirsrv_artifact_root_effective | default(dirsrv_paths.tmp_dir) }}/comprehensive_diagnostics_{{ inventory_hostname }}.txt"
         mode: "0644"
       when: dirsrv_debug | bool
