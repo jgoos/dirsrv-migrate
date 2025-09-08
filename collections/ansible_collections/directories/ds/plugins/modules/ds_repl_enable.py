@@ -159,7 +159,6 @@ def run_module():
     cp = _run(argv, timeout=p.get('op_timeout', 30))
     if cp.returncode != 0:
         stderr = (cp.stderr.decode(errors='ignore') or '').lower()
-        stdout = (cp.stdout.decode(errors='ignore') or '').lower()
         # Idempotence guard: tolerate already-enabled state
         if 'already enabled' in stderr or 'replication is already enabled' in stderr:
             module.exit_json(changed=False, enabled=True)
