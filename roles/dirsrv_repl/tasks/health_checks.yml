@@ -62,16 +62,27 @@
         - ansible_system == "Linux"
         - time_sync_status.rc != 0 or "synchronized: yes" not in time_sync_status.stdout
 
-    - name: Health Checks | Check available disk space
+    - name: Health Checks | Check data directory status
       ansible.builtin.stat:
         path: "{{ dirsrv_data_dir | default('/var/lib/dirsrv') }}"
       register: data_dir_stat
+
+    - name: Health Checks | Query free space for data directory
+      ansible.builtin.command:
+        argv:
+          - df
+          - -B1
+          - --output=avail
+          - "{{ dirsrv_data_dir | default('/var/lib/dirsrv') }}"
+      register: data_dir_space
+      changed_when: false
+      failed_when: false
 
     - name: Health Checks | Ensure sufficient disk space
       ansible.builtin.assert:
         that:
           - data_dir_stat.stat.exists
-          - (data_dir_stat.stat.size | default(0)) > 1073741824  # 1GB minimum
+          - (data_dir_space.stdout_lines | last | default('0') | int) > 1073741824  # 1GB minimum
         fail_msg: "Insufficient disk space or data directory not accessible"
 
 - name: Health Checks | LDAPI connectivity verification
