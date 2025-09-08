@@ -202,7 +202,7 @@ def run_module():
 
     try:
         entries = client.search(replica_dn, 'one', '(objectClass=nsDS5ReplicationAgreement)', [
-            'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN',
+            'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN', 'nsds5ReplicaEnabled',
             'nsds5replicaLastInitStatus', 'nsds5replicaLastInitEnd',
             'nsds5replicaLastUpdateStatus', 'nsds5replicaLastUpdateEnd',
         ])
@@ -218,12 +218,16 @@ def run_module():
         upd_code = int(_CODE_RE.match(upd_status).group(1)) if (isinstance(upd_status, str) and _CODE_RE.match(upd_status)) else None
         init_end = _first(a.get('nsds5replicaLastInitEnd'))
         upd_end = _first(a.get('nsds5replicaLastUpdateEnd'))
+        # Check agreement's own enabled status
+        agmt_enabled = None
+        if 'nsds5ReplicaEnabled' in a:
+            agmt_enabled = (_first(a['nsds5ReplicaEnabled']) or '').lower() in ('on', 'true', 'yes', '1')
         agmts.append(dict(
             dn=e.get('dn', ''),
             host=_first(a.get('nsds5ReplicaHost')),
             port=(int(_first(a.get('nsds5ReplicaPort'))) if _first(a.get('nsds5ReplicaPort')) else None),
             bind_dn=_first(a.get('nsds5ReplicaBindDN')),
-            enabled=bool(rep_enabled),
+            enabled=agmt_enabled,
             last_init_status=init_status,
             last_init_code=init_code,
             last_init_end=init_end,

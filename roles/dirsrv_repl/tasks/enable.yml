@@ -99,7 +99,7 @@
   register: _pre_repl_get
   changed_when: false
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_debug | bool
 
@@ -222,7 +222,7 @@
   register: _post_agmt_list
   changed_when: false
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_debug | bool
 

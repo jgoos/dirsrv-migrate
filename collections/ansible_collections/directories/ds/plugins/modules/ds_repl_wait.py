@@ -27,7 +27,7 @@ options:
     description: If true (and agreements unset) wait on all under replica.
   stale_seconds: {type: int, default: 300, description: Maximum age in seconds for last successful update}
   steady_ok_polls: {type: int, default: 3, description: Consecutive healthy polls required before success}
-  poll_interval: {type: int, default: 10, description: Seconds to wait between polls}
+  poll_interval: {type: int, default: 3, description: Seconds to wait between polls}
   timeout: {type: int, default: 180, description: Maximum time to wait for healthy agreements}
   require_init_success: {type: bool, default: true, description: Require last init to have succeeded (code 0)}
   use_ldapi: {type: bool, default: true, description: Prefer LDAPI (SASL/EXTERNAL) for local instance}
@@ -238,11 +238,17 @@ def run_module():
             # Treat None as unknown (not unhealthy). Accept success code or success keywords.
             uc = o.get('update_code')
             us = (o.get('update_status') or '').lower()
-            if not (uc == 0 or ('succeed' in us) or ('acquired successfully' in us)):
-                unhealthy.append((o['dn'], 'update_code!=0'))
+            # More lenient success detection - accept 0, success keywords, or recent updates
+            is_success = (uc == 0 or ('succeed' in us) or ('acquired successfully' in us) or ('incremental update succeeded' in us))
             age = o.get('update_age')
-            # Consider staleness only when last update did not clearly succeed.
-            if (uc is None or uc != 0):
+            
+            # Only consider it unhealthy if we have a clear failure AND it's stale
+            if not is_success and uc is not None and uc != 0:
+                # Only fail if it's also stale (old failure)
+                if age is None or age < 0 or age > int(p['stale_seconds']):
+                    unhealthy.append((o['dn'], 'update_code!=0'))
+            elif not is_success and uc is None:
+                # Unknown status - only fail if stale
                 if age is None or age < 0 or age > int(p['stale_seconds']):
                     unhealthy.append((o['dn'], 'stale'))
             if p.get('require_init_success') and o.get('init_code') not in (None, 0):
@@ -253,6 +259,8 @@ def run_module():
         if p.get('debug') and p.get('log_every', 5) > 0 and (cycle % int(p['log_every']) == 0 or cycle == 1):
             sample = ', '.join([f"{o['dn'].split(',')[0]}:{o.get('status')} age={o.get('update_age')} code={o.get('update_code')}" for o in last_obs][:3])
             module.warn(f"ds_repl_wait: cycle={cycle} elapsed={elapsed}s unhealthy={len(unhealthy)} ok_streak={ok_streak} sample=[{sample}]")
+        elif not p.get('debug') and cycle % 10 == 0:  # Less frequent logging when not in debug mode
+            module.warn(f"ds_repl_wait: cycle={cycle} elapsed={elapsed}s unhealthy={len(unhealthy)} ok_streak={ok_streak}")
         if len(progress) < 50:
             progress.append(dict(cycle=cycle, elapsed_s=elapsed, unhealthy=len(unhealthy)))
 

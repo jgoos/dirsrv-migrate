@@ -44,7 +44,7 @@
       ansible.builtin.command:
         argv: "{{ __argv }}"
       register: out
-      no_log: true
+      no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
       changed_when: false
       failed_when: false
       until: >-

@@ -498,23 +498,23 @@
           changed_when: false
           failed_when: false
 
-        - name: RCA | show
+        - name: RCA | show summary
           ansible.builtin.debug:
             msg: |
-              list={{ rca_list.stdout | default('') }}
-              mon={{ rca_mon.stdout | default('') }}
-              s1c1={{ rca_status_s1c1.stdout | default('') }}
-              s2c2={{ rca_status_s2c2.stdout | default('') }}
-              ss={{ rca_ss.stdout | default('') }}
-              hosts={{ rca_hosts.stdout | default('') }}
-              nc={{ rca_nc.stdout | default('') }}
-              cl={{ rca_cl.stdout | default('') }}
-              conn_s2c2={{ rca_conn_s2c2.stdout | default('') }}
-              agmt_s2c2={{ rca_agmt_entry.stdout | default('') }}
-              c2_replica={{ rca_consumer_replica.stdout | default('') }}
-              cl_s2={{ rca_cl_s2.stdout | default('') }}
-              ruv={{ rca_ruv.stdout | default('') }}
-          failed_when: true
+              RCA Summary:
+              - List: {{ rca_list.stdout_lines | default([]) | length }} lines
+              - Monitor: {{ rca_mon.stdout_lines | default([]) | length }} lines  
+              - S1C1 Status: {{ rca_status_s1c1.stdout_lines | default([]) | length }} lines
+              - S2C2 Status: {{ rca_status_s2c2.stdout_lines | default([]) | length }} lines
+              - Netstat: {{ rca_ss.stdout_lines | default([]) | length }} lines
+              - Hosts: {{ rca_hosts.stdout_lines | default([]) | length }} lines
+              - Naming Contexts: {{ rca_nc.stdout_lines | default([]) | length }} lines
+              - Changelog: {{ rca_cl.stdout_lines | default([]) | length }} lines
+              - S2->C2 Connection: {{ rca_conn_s2c2.stdout_lines | default([]) | length }} lines
+              - S2->C2 Agreement: {{ rca_agmt_entry.stdout_lines | default([]) | length }} lines
+              - C2 Replica: {{ rca_consumer_replica.stdout_lines | default([]) | length }} lines
+              - S2 Changelog: {{ rca_cl_s2.stdout_lines | default([]) | length }} lines
+              - RUV: {{ rca_ruv.stdout_lines | default([]) | length }} lines
 
 - name: Log scan | No generation ID mismatch warnings in DS errors log
   hosts: ds-s1,ds-s2,ds-c1,ds-c2

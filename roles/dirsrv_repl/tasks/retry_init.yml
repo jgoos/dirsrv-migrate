@@ -7,7 +7,7 @@
   register: _repl_init_status_retry
   changed_when: false
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   throttle: 1
 
 - name: Retry | Check agreement status (JSON) for errors/mismatch
@@ -28,7 +28,7 @@
   register: _repl_status_retry_json
   changed_when: false
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   throttle: 1
 
 - name: Retry | Backoff before retrying init (transient)

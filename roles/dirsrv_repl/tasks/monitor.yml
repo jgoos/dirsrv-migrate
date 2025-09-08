@@ -42,7 +42,7 @@
   register: dirsrv_repl_monitor
   changed_when: false
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   when: not dirsrv_repl_use_modules | bool
 
 - name: Monitor | Show monitor snapshot (concise) (fallback)
@@ -62,7 +62,7 @@
   register: dirsrv_repl_status
   changed_when: false
   failed_when: false
-  no_log: true
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
