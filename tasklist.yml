@@ -1,595 +1,224 @@
-version: 1
-generated_at: 2025-09-07T15:58:40Z
-owner: platform/dirsrv
+---
+# High-level simplification backlog derived from docs/Complexity_Audit_Ansible_Podman_389DS.md
+# Each task includes a precise goal, status, and an AI-oriented prompt
+# Follow repo guidelines in README.md and the Repository Guidelines provided.
+
 tasks:
-  - title: "Compose: Use dsnet network and FQDN hostnames (s1/s2/c1/c2)"
-    status: fixed
-    priority: P0
+  - id: T1-modules-only-repl
+    title: Use collection modules exclusively for replication
+    status: pending
     prompt: |
-      Update compose to match the design’s deterministic networking and naming:
-      - Rename the user-defined network to `dsnet`.
-      - Set container hostnames to FQDNs: `s1.dsnet.test`, `s2.dsnet.test`, `c1.dsnet.test`, `c2.dsnet.test`.
-      - Add DNS aliases for both short and FQDN names on the `dsnet` network.
-      - Optionally rename containers to short names (`s1`, `s2`, `c1`, `c2`) for easier `podman exec`.
-      - Keep host ports unexposed by default (access is container-to-container on dsnet).
-    files_to_edit:
-      - compose/podman-compose.389ds.yml
-    snippets:
-      - path: compose/podman-compose.389ds.yml
-        language: yaml
-        content: |
-          networks:
-            dsnet:
-              driver: bridge
-              name: dsnet
+      Goal: Remove the dual implementation paths for replication and rely solely on the directories.ds modules.
 
-          services:
-            s1:
-              image: quay.io/389ds/dirsrv:latest
-              container_name: s1
-              hostname: s1.dsnet.test
-              networks:
-                dsnet:
-                  aliases: ["s1", "s1.dsnet.test"]
-              # ... env/healthcheck/volumes (see other tasks)
-            # repeat similarly for s2, c1, c2
-    commands:
-      - podman network rm dsnet || true
-      - podman network create dsnet
-    acceptance_criteria:
-      - `podman network inspect dsnet` exists and containers attach to it.
-      - From any container, `getent hosts s1.dsnet.test` resolves to the peer.
-      - From `s2`, `ldapsearch -x -H ldap://s1.dsnet.test:389 -s base -b '' 1.1` succeeds after startup.
-    notes: |
-      Using FQDNs enables TLS SAN matching later. Do not attach containers to multiple user networks.
+      Scope:
+      - Replace all CLI/fallback code paths with module calls in the replication role.
+      - Remove the feature flag `dirsrv_repl_use_modules` and any conditional branching that falls back to `dsconf`/`ldap*` for agreements/init/wait.
 
-  - title: "Compose: Standardize internal LDAP port to 389 and remove DS_PORT=3389"
-    status: fixed
-    priority: P0
-    prompt: |
-      Align the container’s LDAP port to the default 389 (design uses 389/636):
-      - Remove `DS_PORT=3389` from all services.
-      - If setting explicitly, use `DS_PORT=389`.
-      - Update any healthchecks and test files that reference 3389 to use 389.
-    files_to_edit:
-      - compose/podman-compose.389ds.yml
-      - test/repl_vars.yml
-      - test/repl_mesh_vars.yml
-      - test/repl_mesh.yml
-      - Makefile (any 3389 occurrences)
-    acceptance_criteria:
-      - Healthcheck uses 389; `podman exec s1 ss -ltn` shows 389.
-      - All references to 3389 are removed or updated to 389.
-
-  - title: "Compose: Add explicit volumes for config/data/certs/logs with :Z"
-    status: fixed
-    priority: P1
-    prompt: |
-      Persist DS data and prepare for TLS by mounting explicit volumes:
-      - For each service, bind-mount:
-        - `/etc/dirsrv/slapd-<inst>` (config, includes NSS DB)
-        - `/var/lib/dirsrv/slapd-<inst>` (data)
-        - `/etc/dirsrv/slapd-<inst>/certs` (NSS DB subdir; explicit for clarity)
-        - `/var/log/dirsrv/slapd-<inst>` (logs)
-      - Use `:Z` suffix for SELinux label (harmless on macOS but good practice).
-      - Choose host paths; for design parity prefer a VM path like `/srv/389ds-lab/...` or keep current `.ansible/containers/...` for tests.
-    files_to_edit:
-      - compose/podman-compose.389ds.yml
-    snippets:
-      - path: compose/podman-compose.389ds.yml
-        language: yaml
-        content: |
-          services:
-            s1:
-              volumes:
-                - type: bind
-                  source: ../.ansible/containers/s1/etc-dirsrv-slapd-s1
-                  target: /etc/dirsrv/slapd-s1:Z
-                - type: bind
-                  source: ../.ansible/containers/s1/var-lib-dirsrv-slapd-s1
-                  target: /var/lib/dirsrv/slapd-s1:Z
-                - type: bind
-                  source: ../.ansible/containers/s1/etc-dirsrv-slapd-s1-certs
-                  target: /etc/dirsrv/slapd-s1/certs:Z
-                - type: bind
-                  source: ../.ansible/containers/s1/var-log-dirsrv-slapd-s1
-                  target: /var/log/dirsrv/slapd-s1:Z
-            # replicate for s2,c1,c2 with matching instance names
-    acceptance_criteria:
-      - DS logs persist across restarts under host path; configs survive `podman compose down/up`.
-
-  - title: "Compose: Switch healthchecks to LDAPI (EXTERNAL bind)"
-    status: fixed
-    priority: P1
-    prompt: |
-      Use a robust readiness probe that does not depend on TCP or credentials:
-      - Replace healthcheck `test` with `ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1`.
-      - Use `interval: 5s`, `retries: 50`, `timeout: 2s` for stability.
-    files_to_edit:
-      - compose/podman-compose.389ds.yml
-    snippets:
-      - path: compose/podman-compose.389ds.yml
-        language: yaml
-        content: |
-          healthcheck:
-            test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
-            interval: 5s
-            timeout: 2s
-            retries: 50
-    acceptance_criteria:
-      - `podman ps` shows containers becoming healthy after DS is up.
-
-  - title: "Compose: Use DS_SUFFIX_NAME per design; remove DS_SUFFIX"
-    status: fixed
-    priority: P1
-    prompt: |
-      Align instance initialization variables with the design and upstream image support:
-      - Replace `DS_SUFFIX=o=example` with `DS_SUFFIX_NAME=dc=example,dc=com`.
-      - Ensure Directory Manager password env remains set (`DS_DM_PASSWORD=password`).
-    files_to_edit:
-      - compose/podman-compose.389ds.yml
-    acceptance_criteria:
-      - First startup creates suffix `dc=example,dc=com` without manual dsconf calls.
-
-  - title: "Inventory: Add inventories/lab/hosts.yml with FQDNs and replica IDs"
-    status: fixed
-    priority: P0
-    prompt: |
-      Create a lab inventory that matches the design naming and replication roles:
-      - Suppliers: `s1.dsnet.test` (replica_id 1001), `s2.dsnet.test` (replica_id 1002)
-      - Consumers: `c1.dsnet.test` (replica_id 2001), `c2.dsnet.test` (replica_id 2002)
-      - Set `ansible_host` to FQDN; when using the Podman connection plugin keep the inventory hostnames as container names but set separate vars for replication host/port (see Replication task).
-    files_to_add:
-      - inventories/lab/hosts.yml
-    snippets:
-      - path: inventories/lab/hosts.yml
-        language: yaml
-        content: |
-          all:
-            children:
-              suppliers:
-                hosts:
-                  s1.dsnet.test:
-                    replica_id: 1001
-                    ldap_port: 389
-                    ldaps_port: 636
-                    instance_name: "localhost"
-                  s2.dsnet.test:
-                    replica_id: 1002
-                    ldap_port: 389
-                    ldaps_port: 636
-                    instance_name: "localhost"
-              consumers:
-                hosts:
-                  c1.dsnet.test:
-                    replica_id: 2001
-                    ldap_port: 389
-                    ldaps_port: 636
-                    instance_name: "localhost"
-                  c2.dsnet.test:
-                    replica_id: 2002
-                    ldap_port: 389
-                    ldaps_port: 636
-                    instance_name: "localhost"
-    acceptance_criteria:
-      - `ansible-inventory -i inventories/lab/hosts.yml --graph` shows suppliers/consumers with four hosts.
-
-  - title: "Group Vars: Normalize suffix to dc=example,dc=com"
-    status: fixed
-    priority: P0
-    prompt: |
-      Unify the replicated suffix across the repo to the design default `dc=example,dc=com`:
-      - Update `group_vars/all/dirsrv.yml` to set `dirsrv_default_suffix: dc=example,dc=com`.
-      - Update test vars (e.g., `test/compose_vars.yml`, `test/seed.yml`) replacing `o=example` with `dc=example,dc=com`.
-      - Update compose env (`DS_SUFFIX_NAME`) if present.
-    files_to_edit:
-      - group_vars/all/dirsrv.yml
-      - test/compose_vars.yml
-      - test/seed.yml
-      - compose/podman-compose.389ds.yml
-    acceptance_criteria:
-      - All plays and roles operate on `dc=example,dc=com`; no stray `o=example` remain.
-
-  - title: "TLS: Implement dirsrv_tls role (CA trust, server cert import, LDAPS enable)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Create a new role `roles/dirsrv_tls` (or extend an existing TLS role) to:
-      1) Import lab CA into each instance's NSS DB (trust flags CT,C,C).
-      2) Import per-host server certificate and key; set nickname equal to FQDN (e.g., `s1.dsnet.test`).
-      3) Enable TLS by configuring:
-         - `nsslapd-securePort=636`
-         - `nsSSLPersonalitySSL="<FQDN-nickname>"`
-      4) Restart the instance (dsctl <inst> restart).
-      Use LDAPI with `-Y EXTERNAL` where possible. Inputs can be CSR artifacts signed by a local CA or prebuilt test certs.
-    files_to_add:
-      - roles/dirsrv_tls/tasks/main.yml
-    snippets:
-      - path: roles/dirsrv_tls/tasks/main.yml
-        language: yaml
-        content: |
-          ---
-          - name: Import CA certificate (trust CT,C,C)
-            ansible.builtin.command:
-              argv: [certutil, -A, -d, "/etc/dirsrv/slapd-{{ dirsrv_instance | default('localhost') }}", -n, "lab-CA", -t, "CT,C,C", -a, -i, "{{ dirsrv_tls_ca_crt }}"]
-            register: add_ca
-            changed_when: add_ca.rc == 0
-            failed_when: false
-
-          - name: Import server certificate (primary)
-            ansible.builtin.command:
-              argv: [dsconf, "{{ dirsrv_instance | default('localhost') }}", security, certificate, add, --file, "{{ dirsrv_tls_server_crt }}", --name, "{{ inventory_hostname }}", --primary-cert]
-            register: add_srv
-            changed_when: add_srv.rc == 0
-            failed_when: false
-
-          - name: Enable secure port 636
-            ansible.builtin.command:
-              argv: [dsconf, "{{ dirsrv_instance | default('localhost') }}", config, replace, "nsslapd-securePort=636"]
-            register: sec_port
-            changed_when: sec_port.rc == 0
-            failed_when: false
-
-          - name: Set certificate nickname (nsSSLPersonalitySSL)
-            ansible.builtin.command:
-              argv: [dsconf, "{{ dirsrv_instance | default('localhost') }}", config, replace, "nsSSLPersonalitySSL={{ inventory_hostname }}"]
-            register: set_nick
-            changed_when: set_nick.rc == 0
-            failed_when: false
-
-          - name: Restart instance to apply TLS
-            ansible.builtin.command:
-              argv: [dsctl, "{{ dirsrv_instance | default('localhost') }}", restart]
-            register: restart
-            changed_when: restart.rc == 0
-            failed_when: false
-    acceptance_criteria:
-      - `dsconf <inst> get-config | grep -E "nsslapd-securePort|nsSSLPersonalitySSL"` shows expected values.
-      - From peer container, `openssl s_client -connect s1.dsnet.test:636 -CAfile <lab-ca.crt>` returns `Verify return code: 0 (ok)`.
-
-  - title: "Replication: Switch nodes to LDAPS and FQDNs; ensure unique supplier IDs"
-    status: fixed
-    priority: P0
-    prompt: |
-      Update replication variables to use FQDNs over LDAPS 636 and verify replica IDs:
-      - In `test/repl_vars.yml` and `test/repl_mesh_vars.yml`, set `protocol: LDAPS`, `port: 636`, and `host: <FQDN>` for each node.
-      - Ensure `dirsrv_repl_replica_ids` assigns unique IDs to all suppliers/hubs for each suffix.
-      - Keep inventory hostnames for Podman plugin as-is; only the `host` field should be the FQDN used by agreements.
-    files_to_edit:
-      - test/repl_vars.yml
-      - test/repl_mesh_vars.yml
-    snippets:
-      - path: test/repl_mesh_vars.yml
-        language: yaml
-        content: |
-          dirsrv_repl_nodes:
-            ds-s1: { role: supplier, instance: "localhost", host: "s1.dsnet.test", port: 636, protocol: LDAPS }
-            ds-c1: { role: consumer, instance: "localhost", host: "c1.dsnet.test", port: 636, protocol: LDAPS }
-            ds-s2: { role: supplier, instance: "localhost", host: "s2.dsnet.test", port: 636, protocol: LDAPS }
-            ds-c2: { role: consumer, instance: "localhost", host: "c2.dsnet.test", port: 636, protocol: LDAPS }
-    acceptance_criteria:
-      - Agreements list (`dsconf ... repl-agmt list --suffix ...`) shows hosts `*.dsnet.test:636`.
-
-  - title: "Replication: Resolve generation ID mismatches by clean re-init"
-    status: fixed
-    priority: P0
-    prompt: |
-      Address generation ID mismatches seen in logs (e.g., s2->c2):
-      - Run `make reset_soft` to restore golden backups (or `make reset_hard` to fully rebuild).
-      - Ensure only one `init: true` per link (supplier→consumer) in vars; no bidirectional init for same pair.
-      - Re-run mesh play and wait for green with the role’s `wait_green`.
-      - If needed, manually run `dsconf ... repl-agmt init --suffix dc=example,dc=com <agmt-name>` on supplier, then monitor `repl-agmt status` until `"error": 0` and not `in progress`.
-    files_to_edit:
-      - test/repl_mesh_vars.yml
-    commands:
-      - make reset_soft
-      - make test_repl_mesh ARGS="-e dirsrv_debug=true -e dirsrv_log_capture=true -vvv"
-    acceptance_criteria:
-      - No WARN lines about generation ID mismatch in `podman-ds-*.log`.
-      - `wait_green` completes without failure.
-
-  - title: "Makefile: Add design-aligned aliases (up, mesh, verify, down, reset_*, logs)"
-    status: fixed
-    priority: P1
-    prompt: |
-      Provide thin aliases that map to existing testbed targets for parity with DESIGN.md:
-      - up: `up_389ds init_389ds`
-      - mesh: `repl_pod_mesh`
-      - verify: `verify_389ds`
-      - down: `down_389ds`
-      - reset_soft: `reset_soft`
-      - reset_hard: `reset_hard`
-      - logs: `bundle_logs`
-    files_to_edit:
-      - Makefile
-    acceptance_criteria:
-      - `make up`, `make mesh`, `make logs` run successfully and map to the corresponding existing targets.
-
-  - title: "Playbooks: Add provision.yml, replicate.yml, verify.yml, collect_logs.yml"
-    status: fixed
-    priority: P1
-    prompt: |
-      Create top-level playbooks aligning to the design’s flow:
-      - provision.yml: Wait for containers healthy, ensure suffix, run TLS role, prep replication pre-reqs.
-      - replicate.yml: Run `dirsrv_repl` using inventory/group vars for topology.
-      - verify.yml: Basic checks (binds, sample search across nodes, optional test entry add).
-      - collect_logs.yml: Gather DS logs from volumes and `podman logs -t <name>`; place under `.ansible/artifacts/<run>/`.
-    files_to_add:
-      - provision.yml
-      - replicate.yml
-      - verify.yml
-      - collect_logs.yml
-    acceptance_criteria:
-      - Each playbook runs idempotently; supports `--check` where applicable.
-
-  - title: "Tests/Vars: Replace o=example with dc=example,dc=com across repo"
-    status: fixed
-    priority: P0
-    prompt: |
-      Ensure the entire test stack references the unified suffix:
-      - Update `test/compose_vars.yml` backend suffix, `test/seed.yml` DN variables, and any `ldapsearch` bases.
-      - Update example LDIF (`testdata/example.ldif`) if it contains `o=example`.
-    files_to_edit:
-      - test/compose_vars.yml
-      - test/seed.yml
-      - testdata/example.ldif
-    acceptance_criteria:
-      - No occurrences of `o=example` in the repository (except historical docs) per ripgrep.
-
-  - title: "Vault: Store dirsrv_password in Ansible Vault and wire through"
-    status: todo
-    priority: P1
-    prompt: |
-      Secure secrets per repo policy:
-      - Create `group_vars/all/vault.yml` with `dirsrv_password: <secret>` using Ansible Vault.
-      - Run plays with `--ask-vault-pass` or a vault ID.
-      - Ensure roles use `dirsrv_password` (already standard) and do not log secrets (`no_log: true`).
-    files_to_add:
-      - group_vars/all/vault.yml (encrypted)
-    commands:
-      - ansible-vault create group_vars/all/vault.yml
-      - ansible-playbook -i inventory.yml site.yml --ask-vault-pass --check
-    acceptance_criteria:
-      - Secrets not present in plaintext; runs succeed when vault is provided.
-
-  - title: "Makefile/Net: Align NET_NAME and network bootstrap to dsnet"
-    status: fixed
-    priority: P2
-    prompt: |
-      Update Makefile variables and network create target to `dsnet` for consistency with compose:
-      - Set `NET_NAME := dsnet`.
-      - Ensure `net` target creates `dsnet`.
-    files_to_edit:
-      - Makefile
-    acceptance_criteria:
-      - `make net` creates or confirms `dsnet` network.
-
-  - title: "Replication Manager: Verify creation and inbound bind DN authorization"
-    status: fixed
-    priority: P1
-    prompt: |
-      Confirm the replication role’s steps succeeded on each node:
-      - `replication create-manager --name "replication manager"` exists on suppliers/consumers when SIMPLE auth is configured.
-      - `replication set --repl-add-bind-dn` ran on targets matching agreements.
-      - Add a verify task to query `cn=config` and ensure the user and allowed bind DNs are present; fail if missing.
-    files_to_edit:
-      - roles/dirsrv_repl/tasks/enable.yml (optional: add verify block guarded by a var)
-      - verify.yml (add explicit checks)
-    acceptance_criteria:
-      - Verify play fails fast if replication manager or allowed bind DN is missing.
-
-  - title: "Docs/Design Parity: Optional volumes under /srv/389ds-lab inside Podman VM"
-    status: todo
-    priority: P2
-    prompt: |
-      For exact design parity, mount host directories into the Podman VM at `/srv/389ds-lab` and use those as compose volume sources.
-      - Configure Podman machine with a persistent mount (if not already): `podman machine set --volume=$HOME/Projects/389ds-lab:/srv/389ds-lab` then reboot VM.
-      - Adjust compose bind `source:` paths to `/srv/389ds-lab/...` structure.
-    files_to_edit:
-      - compose/podman-compose.389ds.yml
-    commands:
-      - podman machine stop; podman machine set --volume "$HOME/Projects/389ds-lab:/srv/389ds-lab"; podman machine start
-    acceptance_criteria:
-      - DS logs/config/data visible under `/srv/389ds-lab` inside VM and persist across container restarts.
-
-  - title: "Test inventories: Keep Podman container hostnames, but set FQDN in replication host field"
-    status: fixed
-    priority: P1
-    prompt: |
-      Avoid breaking the Podman connection plugin while moving agreements to FQDNs:
-      - Leave inventory hosts as container names (e.g., `ds-s1`), with `ansible_connection: containers.podman.podman`.
-      - In replication vars (`dirsrv_repl_nodes`), set `host: <FQDN>` and `protocol: LDAPS`, `port: 636`.
-    files_to_edit:
-      - test/inventory.compose.pod.yml
-      - test/inventory.compose.pod4.yml
-      - test/repl_vars.yml
-      - test/repl_mesh_vars.yml
-    acceptance_criteria:
-      - Ansible connects via Podman; replication agreements use FQDN:636.
-
-  - title: "Observability: Add a top-level logs alias and confirm bundle contents"
-    status: fixed
-    priority: P2
-    prompt: |
-      Add a `logs` alias to call `bundle_logs` and confirm contents include:
-      - `.ansible/test_logs/podman-*.log`
-      - DS logs copied from bind mounts per service
-      - `.ansible/artifacts` snapshots from roles
-    files_to_edit:
-      - Makefile
-    acceptance_criteria:
-      - `make logs` creates a timestamped archive containing the above paths; archive opens without errors.
-
-  - title: "Collection: Scaffold directories.ds (modules, filter, utils)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Create a minimal Ansible collection per MODULE_SPECS.md with three modules, one filter, and a shared LDAP helper:
-      - Namespace/collection: `directories.ds` (local dev path under `.ansible/collections`).
-      - Plugins:
-        - modules: `ds_repl_info`, `ds_repl_agreement`, `ds_repl_wait`.
-        - filter: `generalized_time_to_epoch`.
-        - module_utils: `dsldap.py` (ldapi first, LDAPS fallback, retries/timeouts).
-      - Docs: `README.md`, `docs/API.md`, `docs/REPLICATION_DESIGN.md` with module args/returns.
-      Keep stubs small and idempotent-friendly; no external collections required.
-    files_to_add:
-      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_info.py
-      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_agreement.py
-      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_wait.py
-      - .ansible/collections/ansible_collections/directories/ds/plugins/filter/generalized_time_to_epoch.py
-      - .ansible/collections/ansible_collections/directories/ds/plugins/module_utils/dsldap.py
-      - .ansible/collections/ansible_collections/directories/ds/README.md
-      - .ansible/collections/ansible_collections/directories/ds/docs/API.md
-      - .ansible/collections/ansible_collections/directories/ds/docs/REPLICATION_DESIGN.md
-    commands:
-      - ansible-doc -t module directories.ds.ds_repl_info || true
-      - ansible-doc -t filter directories.ds.generalized_time_to_epoch || true
-    acceptance_criteria:
-      - `ansible-doc -t module directories.ds.ds_repl_info` loads (stub ok).
-      - `ansible-doc -t filter directories.ds.generalized_time_to_epoch` loads.
-      - Collection tree matches MODULE_SPECS.md structure.
-    notes: |
-      Repo ignores `.ansible/`; for shipping the collection, mirror to `collections/` and add it to `collections_path`.
-
-  - title: "Config: Include local collections/ path in ansible.cfg"
-    status: fixed
-    priority: P0
-    prompt: |
-      Add the project `collections/` path to `collections_path` so a vendored collection can be committed if desired, keeping `.ansible/collections` for dev:
-      - Set `collections_path = collections:.ansible/collections:~/.ansible/collections`.
-    files_to_edit:
-      - ansible.cfg
-    acceptance_criteria:
-      - `ansible-doc -t module directories.ds.ds_repl_info` works when the collection is under either `collections/` or `.ansible/collections`.
-
-  - title: "Filter: Implement generalized_time_to_epoch (LDAP Generalized Time → epoch)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Implement filter plugin per MODULE_SPECS.md:
-      - Accept `YYYYmmddHHMMSSZ` and `YYYYmmddHHMMSS.ffffffZ` (truncate fraction).
-      - Return int epoch UTC or None if unparsable.
-      - Keep logic minimal and robust; add docstring with examples.
-    files_to_edit:
-      - .ansible/collections/ansible_collections/directories/ds/plugins/filter/generalized_time_to_epoch.py
-    acceptance_criteria:
-      - `20250101123045Z` → `1735734645`.
-      - `20240229120000Z` parses (leap day).
-      - `20250101123045+0100` returns None.
-
-  - title: "Module Utils: Implement dsldap.py helper (ldapi first, LDAPS fallback)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Build a tiny LDAP helper for modules:
-      - SASL/EXTERNAL over ldapi (`/run/slapd-<inst>.socket` and container path `/data/run/slapd-<inst>.socket`).
-      - LDAPS SIMPLE or mTLS fallback with CA/client certs.
-      - `search_one`, `add`, `modify`, `delete` with timeouts, 3 retries, jitter backoff.
-      - Raise `DsLdapError` carrying `.code` and `.hint`.
-    files_to_edit:
-      - .ansible/collections/ansible_collections/directories/ds/plugins/module_utils/dsldap.py
-    acceptance_criteria:
-      - Can read `cn=config` over ldapi on test nodes.
-      - Transient errors retried; timeouts respected.
-
-  - title: "Module: ds_repl_info (read replica + agreements)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Implement `directories.ds.ds_repl_info` per MODULE_SPECS.md:
-      - Args include `instance`, `suffix`, `use_ldapi` and TLS/auth options.
-      - Return `replica` (enabled, ruv) and list of agreements with parsed status codes and epochs.
-      - Always `changed: false`; fail fast if replica entry missing.
-    files_to_edit:
-      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_info.py
-    acceptance_criteria:
-      - Returns numeric `last_*_code` and `last_*_epoch` per spec.
-      - Missing replica → `failed: true` with clear message.
-
-  - title: "Module: ds_repl_agreement (ensure present/absent)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Implement `directories.ds.ds_repl_agreement` per MODULE_SPECS.md:
-      - Manage agreement DN under `cn=replica,cn=<suffix>,cn=mapping tree,cn=config`.
-      - Identity attrs: host/port/bindDN; transport mapping (LDAPS→SSL, StartTLS→TLS, LDAP).
-      - Optional tunables: backoff_min/max, purge_delay, compression where supported.
-      - Idempotent create/update/delete with clear warnings for unsupported attrs.
-      - Validate auth mode requirements; no secrets logged.
-    files_to_edit:
-      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_agreement.py
-    acceptance_criteria:
-      - First run may `changed: true`; second run `changed: false` (no drift).
-      - Absent removes existing agreement; missing absent is a no-op.
-
-  - title: "Module: ds_repl_wait (poll until healthy)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Implement `directories.ds.ds_repl_wait` per MODULE_SPECS.md:
-      - Support `agreements: []` or `all: true` under a suffix.
-      - Enforce health: replica enabled, update_code==0, not stale, and (optionally) init_code==0 for `require_init_success`.
-      - Loop internally with `steady_ok_polls`, `poll_interval`, `timeout`; return detailed observations/hints on failure.
-    files_to_edit:
-      - .ansible/collections/ansible_collections/directories/ds/plugins/modules/ds_repl_wait.py
-    acceptance_criteria:
-      - Succeeds when agreements are healthy; fails with `reason: timeout` and hints when broken.
-
-  - title: "Role Integration: Switch dirsrv_repl to use directories.ds modules (feature-flagged)"
-    status: fixed
-    priority: P0
-    prompt: |
-      Replace dsconf/ldapsearch shells with collection modules, behind a guard var for gradual rollout:
-      - Add `dirsrv_repl_use_modules: true` default in `roles/dirsrv_repl/defaults/main.yml`.
-      - In `agreements.yml`, use `directories.ds.ds_repl_agreement` for create/update and remove schedule/attrs via module where possible.
-      - In `wait_green.yml`, use `directories.ds.ds_repl_wait` with `all: true`.
-      - Keep CLI fallback path when `dirsrv_repl_use_modules: false` (no behavior regressions).
-    files_to_edit:
-      - roles/dirsrv_repl/defaults/main.yml
+      Files to change:
       - roles/dirsrv_repl/tasks/agreements.yml
+      - roles/dirsrv_repl/tasks/init.yml
       - roles/dirsrv_repl/tasks/wait_green.yml
-    acceptance_criteria:
-      - When flag enabled, no `dsconf` calls are executed for agreements/wait.
-      - Idempotence holds across two runs; health gating works.
+      - roles/dirsrv_repl/tasks/monitor.yml
+      - roles/dirsrv_repl/tasks/monitoring.yml
+      - roles/dirsrv_repl/defaults/main.yml
 
-  - title: "Docs: Add collection README and API usage snippets"
-    status: fixed
-    priority: P1
-    prompt: |
-      Document the new modules and integration flow:
-      - Collection `README.md` with quickstart and security notes (ldapi preferred, secrets via Vault).
-      - `docs/API.md` with args/returns for each module and examples from MODULE_SPECS.md.
-      - Cross-link from repo `docs/DESIGN.md` and `docs/MODULE_SPECS.md`.
-    files_to_edit:
-      - collections/ansible_collections/directories/ds/README.md
-      - collections/ansible_collections/directories/ds/docs/API.md
-    acceptance_criteria:
-      - Examples run with current lab; docs describe LDAPI vs LDAPS behavior and staleness semantics.
+      Implementation details:
+      - Use `directories.ds.ds_repl_agreement` with `state: present` for creating/updating agreements.
+      - Use `directories.ds.ds_repl_init` to initialize agreements (no `--init` in create step).
+      - Use `directories.ds.ds_repl_wait` for health waits instead of parsing CLI.
+      - Strip out CLI-only snapshotting that is no longer applicable, leaving any existing debug snapshots gated behind `dirsrv_debug: true`.
+      - Ensure `no_log: true` where passwords/credentials are used.
 
-  - title: "Testing: Add Molecule scenario 4node for directories.ds"
-    status: fixed
-    priority: P1
-    prompt: |
-      Create a Molecule `4node` scenario to validate the modules with the existing Podman lab:
-      - Sequence: enable replication, create agreements (partial mesh), wait healthy, CRUD probe, negative auth test, fix, and pass.
-      - Assert idempotence and module return shapes.
-    files_to_add:
-      - collections/ansible_collections/directories/ds/molecule/4node/molecule.yml
-      - collections/ansible_collections/directories/ds/molecule/4node/converge.yml
-      - collections/ansible_collections/directories/ds/molecule/4node/verify.yml
-    acceptance_criteria:
-      - `molecule test -s 4node` passes locally; rerun shows idempotence.
+      Acceptance criteria:
+      - `ansible-playbook --syntax-check site.yml` passes.
+      - `rg -n "dsconf|ldapsearch|ldapwhoami" roles/dirsrv_repl` returns no hits in the modified tasks above (exceptions allowed in enable/tuning if still needed).
+      - Running `ansible-playbook -i inventory.yml repl_mesh.yml --check` completes planning without errors on an existing lab.
 
-  - title: "CI/Lint: ansible-test sanity for collection + yamllint/flake8"
-    status: fixed
-    priority: P2
+  - id: T2-dns-preflight
+    title: Replace /etc/hosts hacks with DNS preflight gating
+    status: pending
     prompt: |
-      Add basic static checks for the new collection:
-      - `ansible-test sanity --python 3.11` from the collection root.
-      - Run `ansible-lint` and `yamllint` for the repo; `flake8` or `ruff` for Python plugins.
-    commands:
-      - pushd .ansible/collections/ansible_collections/directories/ds && ansible-test sanity || true; popd
-      - ansible-lint || true
-      - yamllint .
-    acceptance_criteria:
-      - Sanity checks pass locally or with clear TODOs for gating later.
+      Goal: Eliminate dynamic /etc/hosts edits and fail fast when DNS is misconfigured.
+
+      Scope:
+      - Remove the DNS resolution hack that appends to /etc/hosts from the replication role.
+      - Add deterministic DNS and TCP connectivity checks to preflight and abort if unresolved.
+
+      Files to change:
+      - roles/dirsrv_repl/tasks/error_recovery.yml (remove the entire "Handle DNS resolution failures" block)
+      - roles/dirsrv_common/tasks/preflight.yml (add DNS and port checks for all agreement targets)
+
+      Implementation details:
+      - In preflight, for each agreement target (from `dirsrv_repl_agreements`), run a `getent hosts <name>` and assert rc == 0.
+      - Optionally use `ansible.builtin.wait_for` with `host` and `port` for quick TCP gating (short timeout, non-destructive).
+      - Provide a concise fail_msg guiding the operator to fix Podman DNS/network.
+      - Do not modify /etc/hosts under any circumstance.
+
+      Acceptance criteria:
+      - `rg -n "lineinfile:.*\/etc\/hosts" roles/dirsrv_repl/tasks/error_recovery.yml` returns no matches.
+      - Broken DNS results in a clear assert failure during preflight, before any replication changes.
+
+  - id: T3-remove-backend-create-from-repl
+    title: Remove suffix/backend creation from replication role; assert existence instead
+    status: pending
+    prompt: |
+      Goal: Replication role should not create or modify backends/suffix mapping trees.
+
+      Scope:
+      - Delete the task block in `roles/dirsrv_repl/tasks/enable.yml` that creates backends/mapping trees.
+      - Replace with a lightweight, read-only assert that the suffix exists and replication can be enabled.
+
+      Files to change:
+      - roles/dirsrv_repl/tasks/enable.yml
+
+      Implementation details:
+      - Remove the "Enable | Ensure suffix mapping tree exists (safe)" task that runs `dsconf ... backend create`.
+      - Add a read-only check: either `directories.ds.ds_repl_enable` in check_mode or a `dsconf -j replication get --suffix <DN>` gated by `changed_when: false` and `failed_when: false`, then assert on expected markers.
+      - Provide actionable `fail_msg` telling the operator to ensure the suffix is created by migrate flows.
+
+      Acceptance criteria:
+      - Replication role no longer runs `backend create`.
+      - Failing precondition produces a clear error without side effects.
+
+  - id: T4-simplify-init-orchestration
+    title: Simplify init ordering; remove primary-supplier state machine
+    status: pending
+    prompt: |
+      Goal: Reduce orchestration complexity by removing implicit state for primary supplier and bidirectional init pairing.
+
+      Scope:
+      - Remove the blocks in `roles/dirsrv_repl/tasks/main.yml` that compute `dirsrv_repl_init_pairs` and the "Mesh | Identify primary supplier" logic.
+      - Enforce serialized initialization using Ansible mechanisms instead of per-host state machines.
+
+      Files to change:
+      - roles/dirsrv_repl/tasks/main.yml
+      - repl_mesh.yml (add `serial: 1` at the play level)
+
+      Implementation details:
+      - Delete the `set_fact` blocks that compute pairs and the `assert` that blocks bidirectional init.
+      - Add `throttle: 1` to the tasks that perform `directories.ds.ds_repl_init` (and, if helpful, agreement creation) to avoid concurrency.
+      - In `repl_mesh.yml`, set `serial: 1` to sequence hosts for init operations.
+      - Keep any straightforward waits, but avoid deriving implicit primaries from facts.
+
+      Acceptance criteria:
+      - The main tasks no longer set/consume `dirsrv_repl_init_pairs` or `dirsrv_repl_primary_supplier`.
+      - `repl_mesh.yml` includes `serial: 1` and a run converges without race conditions.
+
+  - id: T5-slim-health-checks
+    title: Slim replication health_checks.yml to essentials
+    status: pending
+    prompt: |
+      Goal: Keep only high-signal checks in health_checks.yml and move environment checks to preflight.
+
+      Scope:
+      - Retain: variable validation, LDAPI readiness, minimal remote connectivity ping.
+      - Remove or migrate: time sync warnings, extensive final verification, mesh topology counters.
+
+      Files to change:
+      - roles/dirsrv_repl/tasks/health_checks.yml
+      - roles/dirsrv_common/tasks/preflight.yml (move time sync check here)
+
+      Implementation details:
+      - Cut back the remote connectivity loop; rely on preflight (T2) to gate DNS/TCP.
+      - Keep a single LDAPI EXTERNAL base search as a readiness check.
+      - Remove the heavy "Post-operation verification" block; rely on `wait_green.yml` and `ds_repl_wait` for convergence.
+
+      Acceptance criteria:
+      - health_checks.yml is under ~150 lines and contains no DST state machine logic.
+      - Most environment assertions appear in preflight instead.
+
+  - id: T6-repl-teardown
+    title: Add replication teardown tasks and a playbook
+    status: pending
+    prompt: |
+      Goal: Provide a clean rollback path that removes agreements and disables replication when needed.
+
+      Scope:
+      - New task file `roles/dirsrv_repl/tasks/teardown.yml` to remove agreements using `directories.ds.ds_repl_agreement: state=absent`.
+      - New top-level playbook `replication_teardown.yml` that runs teardown across the inventory.
+
+      Implementation details:
+      - Iterate over `dirsrv_repl_agreements` and call `ds_repl_agreement: state=absent` for each local-from agreement.
+      - Optionally add a final `dsconf replication set --suffix ... --replica-enabled off` per suffix if supported (best-effort, guarded by `changed_when: result.rc == 0`, `failed_when: false`).
+      - Ensure idempotence and `no_log: true` where needed.
+
+      Acceptance criteria:
+      - `ansible-playbook --syntax-check replication_teardown.yml` passes.
+      - Re-running teardown is idempotent (no changes on second run).
+
+  - id: T7-defaults-cleanup
+    title: Remove dirsrv_repl_use_modules and align defaults
+    status: pending
+    prompt: |
+      Goal: Drop the feature flag now that modules are the only path and prune unused defaults.
+
+      Files to change:
+      - roles/dirsrv_repl/defaults/main.yml
+
+      Implementation details:
+      - Remove `dirsrv_repl_use_modules` and any comments instructing toggling paths.
+      - Ensure remaining defaults still align with variables guidelines (lower_snake_case, `dirsrv_*` prefix).
+
+      Acceptance criteria:
+      - No references to `dirsrv_repl_use_modules` remain in repo.
+
+  - id: T8-docs-refresh
+    title: Refresh docs to reflect simplified replication flow
+    status: pending
+    prompt: |
+      Goal: Update design and README docs to document the simplified, module-only flow and preflight gates.
+
+      Files to change:
+      - docs/REPLICATION_DESIGN.md
+      - docs/REPLICATION_LAB.md
+      - docs/MODULE_SPECS.md
+      - README.md
+
+      Implementation details:
+      - Remove references to CLI fallbacks and /etc/hosts edits.
+      - Document preflight DNS/TCP checks and failure modes.
+      - Show example play invocations (`--check`, `--diff`, vault usage) per repository policy.
+
+      Acceptance criteria:
+      - Docs build cleanly (markdown lints pass if configured) and reflect current variables and flow.
+
+  - id: T9-check-mode-audit
+    title: Ensure check-mode safety and explicit changed_when/failed_when
+    status: pending
+    prompt: |
+      Goal: Reconfirm that destructive operations are guarded in check-mode and commands have explicit result gating.
+
+      Scope:
+      - Audit `roles/dirsrv_repl/tasks/*.yml` and ensure tasks that change state are skipped under `ansible_check_mode`.
+      - Verify all `command`/`shell` tasks use `changed_when` and `failed_when` appropriately.
+
+      Files to review:
+      - roles/dirsrv_repl/tasks/enable.yml
+      - roles/dirsrv_repl/tasks/agreements.yml
+      - roles/dirsrv_repl/tasks/init.yml
+      - roles/dirsrv_repl/tasks/wait_green.yml
+      - roles/dirsrv_repl/tasks/monitor.yml
+      - roles/dirsrv_repl/tasks/monitoring.yml
+
+      Acceptance criteria:
+      - `ansible-playbook -i inventory.yml repl_mesh.yml --check` performs no changes and surfaces clear gating messages when preconditions fail.
+
+  - id: T10-idempotence-and-ci
+    title: Add idempotence check target and tighten lint/test flows
+    status: pending
+    prompt: |
+      Goal: Provide a one-shot target to run lint, syntax-check, and double-run idempotence for the replication flows.
+
+      Files to change:
+      - Makefile
+      - test/repl_mesh.yml (ensure it reflects current defaults)
+
+      Implementation details:
+      - Add a `test_repl_idempotent` make target that runs:
+        1) `ansible-playbook --syntax-check repl_mesh.yml`
+        2) `ansible-playbook -i inventory.yml repl_mesh.yml -e dirsrv_debug=false`
+        3) Re-run step (2) and ensure no changes reported (grep summary).
+      - Ensure `ansible-lint` and `yamllint .` targets exist or are optional if tools not installed.
+
+      Acceptance criteria:
+      - `make test_repl_idempotent` completes and second run shows 0 changed.
