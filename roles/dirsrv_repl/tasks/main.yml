@@ -116,13 +116,17 @@
   block:
     - name: Mesh | Identify primary supplier (first in init order)
       ansible.builtin.set_fact:
-        dirsrv_repl_primary_supplier: "{{ (dirsrv_repl_agreements[item] | selectattr('init', 'equalto', true) | first).from }}"
+        dirsrv_repl_primary_supplier: "{{ _init_from[0] }}"
       loop: "{{ dirsrv_repl_suffixes }}"
-      when: dirsrv_repl_suffixes | length > 0
+      vars:
+        _init_from: "{{ dirsrv_repl_agreements[item] | selectattr('init', 'equalto', true) | map(attribute='from') | list }}"
+        ansible_become: false
+      when:
+        - dirsrv_repl_suffixes | length > 0
+        - _init_from | length > 0
+        - dirsrv_repl_primary_supplier is not defined
       run_once: true
       delegate_to: localhost
-      vars:
-        ansible_become: false
 
     - name: Mesh | Wait for primary supplier to be ready
       ansible.builtin.wait_for:
