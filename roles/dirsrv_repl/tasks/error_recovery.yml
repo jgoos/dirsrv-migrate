@@ -127,7 +127,7 @@
       register: restart_instance
       changed_when: restart_instance.rc == 0
       failed_when: false
-      when: enable_suffix.changed | bool and (not ansible_check_mode)
+      when: not ansible_check_mode and enable_suffix is defined and (enable_suffix.changed | bool)
 
   # DNS resolution hacks removed; DNS is now gated in preflight
 
