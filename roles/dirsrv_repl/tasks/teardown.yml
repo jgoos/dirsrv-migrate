@@ -8,6 +8,11 @@
       - dirsrv_repl_agreements is defined
     fail_msg: "dirsrv_repl_suffixes and dirsrv_repl_agreements must be defined for teardown"
 
+- name: Teardown | Build local dsconf connection URL
+  ansible.builtin.set_fact:
+    dirsrv_repl_conn_url: >-
+      {{ (dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port }}
+
 - name: Teardown | Remove local agreements via module
   vars:
     suffix: "{{ item.0.key }}"

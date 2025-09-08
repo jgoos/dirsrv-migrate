@@ -47,11 +47,9 @@
     suffix: "{{ item }}"
     suffix_esc: "{{ suffix | regex_replace('=','\\3D') | regex_replace(',', '\\2C') }}"
     base_dn: "cn={{ suffix_esc }},cn=mapping tree,cn=config"
+    suffix_lookup_cmd: "{{ (dirsrv_ldapi_uri | default('') | length > 0) | ternary(['ldapsearch','-LLL','-Y','EXTERNAL','-H', dirsrv_ldapi_uri, '-s','base','-b', base_dn, 'cn'], ['ldapsearch','-LLL','-x','-D', dirsrv_dm_dn, '-w', dirsrv_password, '-H', dirsrv_repl_conn_url, '-s','base','-b', base_dn, 'cn']) }}"
   ansible.builtin.command:
-    argv: >-
-      {{ ['ldapsearch','-LLL','-Y','EXTERNAL','-H', dirsrv_ldapi_uri, '-s','base','-b', base_dn, 'cn']
-         if (dirsrv_ldapi_uri | default('') | length > 0)
-         else ['ldapsearch','-LLL','-x','-D', dirsrv_dm_dn, '-w', dirsrv_password, '-H', dirsrv_repl_conn_url, '-s','base','-b', base_dn, 'cn'] }}
+    argv: "{{ suffix_lookup_cmd }}"
   register: dirsrv_repl_suffix_check
   changed_when: false
   failed_when: false
