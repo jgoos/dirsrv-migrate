@@ -1,0 +1,266 @@
+---
+# Error recovery and remediation tasks for replication operations
+# These tasks handle various failure scenarios and attempt recovery
+
+- name: Error Recovery | Detect and handle common replication errors
+  block:
+    - name: Error Recovery | Check for UpdateInProgress errors
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - -H
+          - "{{ dirsrv_repl_conn_url }}"
+          - -s
+          - base
+          - -b
+          - "cn={{ item.1.name }},cn=replica,cn={{ item.0.key | regex_replace('dc=', 'dc\\3D') | regex_replace(',', '\\2C') }},cn=mapping tree,cn=config"
+          - "nsDS5ReplicaUpdateInProgress"
+      register: update_in_progress_check
+      changed_when: false
+      failed_when: false
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Error Recovery | Wait for UpdateInProgress to clear
+      ansible.builtin.pause:
+        seconds: "{{ dirsrv_repl_retry_settings.mesh_settings.agreement_serialization_delay | int }}"
+      when:
+        - update_in_progress_check.rc == 0
+        - "TRUE" in (update_in_progress_check.stdout | upper)
+
+    - name: Error Recovery | Check for replica lock conflicts
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - replication
+          - get
+          - --suffix
+          - "{{ item }}"
+      register: replica_lock_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+
+    - name: Error Recovery | Handle replica lock conflicts
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - replication
+          - set
+          - --suffix
+          - "{{ item.item }}"
+          - --repl-release-timeout
+          - "{{ dirsrv_repl_release_timeout | int + 30 }}"
+      register: release_timeout_increase
+      changed_when: release_timeout_increase.rc == 0
+      failed_when: false
+      when:
+        - replica_lock_check.rc == 0
+        - "locked" in (replica_lock_check.stdout | lower)
+
+- name: Error Recovery | Handle suffix disabled errors
+  block:
+    - name: Error Recovery | Check suffix status
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - backend
+          - config
+          - get
+          - userRoot
+      register: backend_status_check
+      changed_when: false
+      failed_when: false
+
+    - name: Error Recovery | Enable disabled suffix
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - backend
+          - config
+          - set
+          - userRoot
+          - --enabled
+          - "on"
+      register: enable_suffix
+      changed_when: enable_suffix.rc == 0
+      failed_when: false
+      when:
+        - backend_status_check.rc == 0
+        - "disabled" in (backend_status_check.stdout | lower)
+
+    - name: Error Recovery | Restart instance if suffix was disabled
+      ansible.builtin.command:
+        argv:
+          - dsctl
+          - "{{ dirsrv_instance }}"
+          - restart
+      register: restart_instance
+      changed_when: restart_instance.rc == 0
+      failed_when: false
+      when: enable_suffix.changed | bool
+
+- name: Error Recovery | Handle DNS resolution failures
+  block:
+    - name: Error Recovery | Test DNS resolution for all targets
+      ansible.builtin.command:
+        argv:
+          - getent
+          - hosts
+          - "{{ dirsrv_repl_nodes[item.1.to].host }}"
+      register: dns_resolution_test
+      changed_when: false
+      failed_when: false
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Error Recovery | Add missing host entries
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "{{ dirsrv_repl_nodes[item.1.to].host }} {{ dirsrv_repl_nodes[item.1.to].host }}"
+        state: present
+      when:
+        - dns_resolution_test.rc != 0
+        - item.1.from == inventory_hostname
+
+- name: Error Recovery | Handle LDAPI socket issues
+  block:
+    - name: Error Recovery | Check LDAPI socket accessibility
+      ansible.builtin.stat:
+        path: "{{ dirsrv_ldapi_socket_path | default('/data/run/slapd-localhost.socket') }}"
+      register: ldapi_socket_stat
+
+    - name: Error Recovery | Try alternative LDAPI socket path
+      ansible.builtin.set_fact:
+        alternative_ldapi_uri: "ldapi://%2Frun%2Fslapd-{{ dirsrv_instance }}.socket"
+      when: not ldapi_socket_stat.stat.exists
+
+    - name: Error Recovery | Update LDAPI URI if needed
+      ansible.builtin.set_fact:
+        dirsrv_ldapi_uri: "{{ alternative_ldapi_uri }}"
+      when: alternative_ldapi_uri is defined
+
+- name: Error Recovery | Handle replication agreement conflicts
+  block:
+    - name: Error Recovery | Check for duplicate agreements
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - repl-agmt
+          - list
+          - --suffix
+          - "{{ item.0.key }}"
+      register: agreement_list_check
+      changed_when: false
+      failed_when: false
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Error Recovery | Remove duplicate agreements
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - repl-agmt
+          - delete
+          - --suffix
+          - "{{ item.0.key }}"
+          - "{{ item.1.name }}"
+      register: remove_duplicate_agreement
+      changed_when: remove_duplicate_agreement.rc == 0
+      failed_when: false
+      when:
+        - agreement_list_check.rc == 0
+        - item.1.name in (agreement_list_check.stdout_lines | default([]))
+        - "duplicate" in (agreement_list_check.stdout | lower)
+
+- name: Error Recovery | Comprehensive error logging
+  block:
+    - name: Error Recovery | Log error details for debugging
+      ansible.builtin.debug:
+        msg: |
+          Replication Error Details:
+          - Host: {{ inventory_hostname }}
+          - Agreement: {{ item.1.name }}
+          - Suffix: {{ item.0.key }}
+          - Error: {{ item.0.stderr | default('Unknown error') }}
+          - Return Code: {{ item.0.rc | default(-1) }}
+      with_subelements:
+        - "{{ dirsrv_repl_init_status.results | default([]) }}"
+        - item
+      when: 
+        - item.0.rc != 0
+        - item.1.from == inventory_hostname
+
+    - name: Error Recovery | Collect system information for debugging
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - replication
+          - get
+          - --suffix
+          - "{{ item }}"
+      register: replication_status_debug
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+      when: dirsrv_debug | bool
+
+    - name: Error Recovery | Save debug information
+      ansible.builtin.copy:
+        content: |
+          Replication Debug Information
+          ============================
+          Host: {{ inventory_hostname }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          
+          Replication Status:
+          {{ replication_status_debug.results | to_nice_json }}
+        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/replication_debug_{{ inventory_hostname }}.txt"
+        mode: "0644"
+      when: dirsrv_debug | bool

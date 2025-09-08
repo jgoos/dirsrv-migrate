@@ -1,0 +1,246 @@
+---
+# Comprehensive health checks for replication operations
+# These checks run before, during, and after replication operations
+
+- name: Health Checks | Pre-flight validation
+  block:
+    - name: Health Checks | Validate required variables
+      ansible.builtin.assert:
+        that:
+          - dirsrv_repl_suffixes is defined
+          - dirsrv_repl_suffixes | length > 0
+          - dirsrv_repl_nodes is defined
+          - dirsrv_repl_nodes | length > 0
+          - dirsrv_repl_auth is defined
+          - dirsrv_repl_auth.bind_dn is defined
+          - dirsrv_repl_auth.bind_password is defined
+        fail_msg: "Required replication variables not defined or empty"
+
+    - name: Health Checks | Validate replica IDs are unique per suffix
+      ansible.builtin.assert:
+        that:
+          - item.value | map(attribute='value') | unique | length == item.value | length
+        fail_msg: "Duplicate replica IDs found for suffix {{ item.key }}"
+      with_dict: "{{ dirsrv_repl_replica_ids }}"
+      when: dirsrv_repl_require_unique_replica_ids | bool
+
+    - name: Health Checks | Validate agreement targets exist
+      ansible.builtin.assert:
+        that:
+          - dirsrv_repl_nodes[item.1.to] is defined
+        fail_msg: "Target host '{{ item.1.to }}' not found in dirsrv_repl_nodes"
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Health Checks | Check for circular dependencies in agreements
+      ansible.builtin.assert:
+        that:
+          - item.1.from != item.1.to
+        fail_msg: "Circular dependency detected: {{ item.1.from }} -> {{ item.1.to }}"
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+- name: Health Checks | System readiness checks
+  block:
+    - name: Health Checks | Check time synchronization
+      ansible.builtin.command:
+        argv: [timedatectl, status]
+      register: time_sync_status
+      changed_when: false
+      failed_when: false
+      when: ansible_system == "Linux"
+
+    - name: Health Checks | Warn if time sync issues detected
+      ansible.builtin.debug:
+        msg: "Time synchronization issues detected. Replication requires accurate time."
+        warn: true
+      when: 
+        - ansible_system == "Linux"
+        - time_sync_status.rc != 0 or "synchronized: yes" not in time_sync_status.stdout
+
+    - name: Health Checks | Check data directory status
+      ansible.builtin.stat:
+        path: "{{ dirsrv_data_dir | default('/var/lib/dirsrv') }}"
+      register: data_dir_stat
+
+    - name: Health Checks | Query free space for data directory
+      ansible.builtin.command:
+        argv:
+          - df
+          - -B1
+          - --output=avail
+          - "{{ dirsrv_data_dir | default('/var/lib/dirsrv') }}"
+      register: data_dir_space
+      changed_when: false
+      failed_when: false
+
+    - name: Health Checks | Ensure sufficient disk space
+      ansible.builtin.assert:
+        that:
+          - data_dir_stat.stat.exists
+          - (data_dir_space.stdout_lines | last | default('0') | int) > 1073741824  # 1GB minimum
+        fail_msg: "Insufficient disk space or data directory not accessible"
+
+- name: Health Checks | LDAPI connectivity verification
+  block:
+    - name: Health Checks | Test LDAPI socket accessibility
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -Y
+          - EXTERNAL
+          - -H
+          - "{{ dirsrv_ldapi_uri }}"
+          - -s
+          - base
+          - -b
+          - ""
+          - "1.1"
+      register: ldapi_health_check
+      changed_when: false
+      failed_when: false
+      retries: "{{ dirsrv_repl_retry_settings.operation_timeouts.ldapi_health_check | int // dirsrv_repl_retry_settings.base_delay | int }}"
+      delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
+      until: ldapi_health_check.rc == 0
+
+    - name: Health Checks | Verify LDAPI response
+      ansible.builtin.assert:
+        that:
+          - ldapi_health_check.rc == 0
+          - ldapi_health_check.stdout is defined
+        fail_msg: "LDAPI socket not responding correctly"
+
+- name: Health Checks | Remote connectivity verification
+  block:
+    - name: Health Checks | Test remote LDAP connectivity
+      vars:
+        target: "{{ dirsrv_repl_nodes[item.1.to] }}"
+        _proto: "{{ target.protocol | lower }}"
+        _url: "{{ _proto }}://{{ target.host }}:{{ target.port }}"
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -H
+          - "{{ _url }}"
+          - -s
+          - base
+          - -b
+          - ""
+          - "1.1"
+      register: remote_connectivity_check
+      changed_when: false
+      failed_when: false
+      retries: "{{ dirsrv_repl_retry_settings.operation_timeouts.remote_bind_check | int // dirsrv_repl_retry_settings.base_delay | int }}"
+      delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
+      until: remote_connectivity_check.rc == 0
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Health Checks | Verify remote connectivity
+      ansible.builtin.assert:
+        that:
+          - remote_connectivity_check.rc == 0
+        fail_msg: "Remote host {{ item.1.to }} not reachable"
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+- name: Health Checks | Replication state validation
+  block:
+    - name: Health Checks | Check replication is enabled for suffixes
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - replication
+          - get
+          - --suffix
+          - "{{ item }}"
+      register: repl_enabled_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+
+    - name: Health Checks | Verify replication enabled
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - "enabled" in (item.stdout | lower)
+        fail_msg: "Replication not enabled for suffix {{ item.item }}"
+      loop: "{{ repl_enabled_check.results }}"
+
+- name: Health Checks | Mesh topology specific checks
+  block:
+    - name: Health Checks | Count suppliers in topology
+      ansible.builtin.set_fact:
+        supplier_count: "{{ dirsrv_repl_nodes | dict2items | selectattr('value.role', 'equalto', 'supplier') | list | length }}"
+
+    - name: Health Checks | Count consumers in topology
+      ansible.builtin.set_fact:
+        consumer_count: "{{ dirsrv_repl_nodes | dict2items | selectattr('value.role', 'equalto', 'consumer') | list | length }}"
+
+    - name: Health Checks | Validate mesh topology requirements
+      ansible.builtin.assert:
+        that:
+          - supplier_count | int >= 1
+          - consumer_count | int >= 0
+          - (supplier_count | int + consumer_count | int) == (dirsrv_repl_nodes | length)
+        fail_msg: "Invalid mesh topology: {{ supplier_count }} suppliers, {{ consumer_count }} consumers"
+
+    - name: Health Checks | Check for bi-directional supplier agreements
+      ansible.builtin.set_fact:
+        bidirectional_agreements: >-
+          {{
+            dirsrv_repl_agreements | dict2items | map(attribute='value') | 
+            selectattr('from', 'defined') | selectattr('to', 'defined') |
+            map('regex_replace', '^(.*)-to-(.*)$', '\\2-to-\\1') | list
+          }}
+
+    - name: Health Checks | Validate bi-directional supplier connectivity
+      ansible.builtin.debug:
+        msg: "Found {{ bidirectional_agreements | length }} bi-directional agreement patterns"
+      when: supplier_count | int > 1
+
+- name: Health Checks | Post-operation verification
+  block:
+    - name: Health Checks | Verify all agreements are healthy
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - repl-agmt
+          - init-status
+          - --suffix
+          - "{{ item.0.key }}"
+          - "{{ item.1.name }}"
+      register: agreement_health_check
+      changed_when: false
+      failed_when: false
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Health Checks | Report agreement health status
+      ansible.builtin.debug:
+        msg: "Agreement {{ item.1.name }} status: {{ 'HEALTHY' if 'successfully initialized' in (item.0.stdout | lower) else 'UNHEALTHY' }}"
+      with_subelements:
+        - "{{ agreement_health_check.results }}"
+        - item
+      when: item.1.from == inventory_hostname

@@ -4,28 +4,11 @@
     msg: "No replication agreements defined; skipping"
   when: (dirsrv_repl_agreements | length | int) == 0
 
-- name: Agreements | Health check - verify LDAPI connectivity
-  ansible.builtin.command:
-    argv:
-      - ldapsearch
-      - -Y
-      - EXTERNAL
-      - -H
-      - "{{ dirsrv_ldapi_uri }}"
-      - -s
-      - base
-      - -b
-      - ""
-      - "1.1"
-  register: dirsrv_repl_ldapi_health
-  changed_when: false
-  failed_when: dirsrv_repl_ldapi_health.rc != 0
-  retries: 10
-  delay: 2
+- name: Agreements | Include comprehensive health checks
+  ansible.builtin.include_tasks: health_checks.yml
   when:
     - dirsrv_repl_agreements | length | int > 0
     - not ansible_check_mode
-    - dirsrv_ldapi_uri | default('') | length > 0
 
 - name: Agreements | Validate target nodes exist
   ansible.builtin.assert:
@@ -405,9 +388,13 @@
     - not ansible_check_mode
     - not (dirsrv_repl_is_secondary_supplier | default(false) | bool)
 
-- name: Agreements | Poll init-status to completion (online mode)
+- name: Agreements | Poll init-status to completion (online mode) - Adaptive retry
   vars:
-    max_tries: 30
+    max_tries: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | int // dirsrv_repl_retry_settings.base_delay | int }}"
+    base_delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
+    backoff_multiplier: "{{ dirsrv_repl_retry_settings.backoff_multiplier | float }}"
+    max_delay: "{{ dirsrv_repl_retry_settings.max_delay | int }}"
+    current_delay: "{{ base_delay }}"
   ansible.builtin.command: >-
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
@@ -416,11 +403,14 @@
   failed_when: >-
     dirsrv_repl_init_status.rc != 0 and
     'unknown' not in (dirsrv_repl_init_status.stdout | lower | default('')) and
-    'can\'t contact' not in (dirsrv_repl_init_status.stderr | lower | default(''))
+    'can\'t contact' not in (dirsrv_repl_init_status.stderr | lower | default('')) and
+    'timeout' not in (dirsrv_repl_init_status.stderr | lower | default('')) and
+    'temporary' not in (dirsrv_repl_init_status.stderr | lower | default(''))
   until: >-
-    (dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized')
+    (dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized') or
+    (dirsrv_repl_init_status.stdout | lower | default('')) is search('already initialized')
   retries: "{{ max_tries }}"
-  delay: 5
+  delay: "{{ current_delay }}"
   throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
@@ -431,6 +421,14 @@
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
     - not (dirsrv_repl_is_secondary_supplier | default(false) | bool)
+    - dirsrv_repl_nodes[item.1.from].role == 'supplier'
+
+- name: Agreements | Adaptive delay calculation for next retry
+  ansible.builtin.set_fact:
+    current_delay: "{{ [current_delay * backoff_multiplier, max_delay] | min }}"
+  when: 
+    - dirsrv_repl_init_status.rc != 0
+    - not ((dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized'))
 
 # Second phase: Initialize secondary suppliers after primary is ready
 - name: Agreements | Start online init (secondary suppliers)
@@ -562,7 +560,7 @@
 
 - name: Agreements | Poll init-status after final re-init
   vars:
-    max_tries: 60
+    max_tries: "{{ dirsrv_repl_retry_settings.operation_timeouts.final_verification | int // dirsrv_repl_retry_settings.base_delay | int }}"
   ansible.builtin.command: >-
     dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
@@ -571,11 +569,14 @@
   failed_when: >-
     dirsrv_repl_final_status.rc != 0 and
     'unknown' not in (dirsrv_repl_final_status.stdout | lower | default('')) and
-    'can\'t contact' not in (dirsrv_repl_final_status.stderr | lower | default(''))
+    'can\'t contact' not in (dirsrv_repl_final_status.stderr | lower | default('')) and
+    'timeout' not in (dirsrv_repl_final_status.stderr | lower | default('')) and
+    'temporary' not in (dirsrv_repl_final_status.stderr | lower | default(''))
   until: >-
-    (dirsrv_repl_final_status.stdout | lower | default('')) is search('successfully initialized')
+    (dirsrv_repl_final_status.stdout | lower | default('')) is search('successfully initialized') or
+    (dirsrv_repl_final_status.stdout | lower | default('')) is search('already initialized')
   retries: "{{ max_tries }}"
-  delay: 5
+  delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
   throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
@@ -585,3 +586,14 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
+
+- name: Agreements | Include error recovery for failed operations
+  ansible.builtin.include_tasks: error_recovery.yml
+  when:
+    - dirsrv_repl_final_status.results is defined
+    - dirsrv_repl_final_status.results | selectattr('rc', 'not_equalto', 0) | list | length > 0
+    - not ansible_check_mode
+
+- name: Agreements | Final health verification
+  ansible.builtin.include_tasks: monitoring.yml
+  when: not ansible_check_mode
