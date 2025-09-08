@@ -42,38 +42,30 @@
   failed_when: false
   when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0)
 
-- name: Enable | Ensure suffix mapping tree exists (safe)
+- name: Enable | Verify suffix mapping tree exists (read-only)
+  vars:
+    suffix: "{{ item }}"
+    suffix_esc: "{{ suffix | regex_replace('=','\\3D') | regex_replace(',', '\\2C') }}"
+    base_dn: "cn={{ suffix_esc }},cn=mapping tree,cn=config"
   ansible.builtin.command:
-    argv:
-      - dsconf
-      - "{{ dirsrv_repl_this_node.instance }}"
-      - backend
-      - create
-      - --suffix
-      - "{{ item }}"
-      - --be-name
-      - userRoot
-  register: dirsrv_repl_suffix_ensure
-  changed_when: dirsrv_repl_suffix_ensure.rc == 0
-  failed_when: >-
-    dirsrv_repl_suffix_ensure.rc != 0 and
-    (
-      'already exists' not in (
-        (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
-        (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
-      )
-    ) and (
-      'mapping tree' not in (
-        (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
-        (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
-      )
-    ) and (
-      'exists' not in (
-        (dirsrv_repl_suffix_ensure.stdout | lower | default('')) + ' ' +
-        (dirsrv_repl_suffix_ensure.stderr | lower | default(''))
-      )
-    )
+    argv: >-
+      {{ ['ldapsearch','-LLL','-Y','EXTERNAL','-H', dirsrv_ldapi_uri, '-s','base','-b', base_dn, 'cn']
+         if (dirsrv_ldapi_uri | default('') | length > 0)
+         else ['ldapsearch','-LLL','-x','-D', dirsrv_dm_dn, '-w', dirsrv_password, '-H', dirsrv_repl_conn_url, '-s','base','-b', base_dn, 'cn'] }}
+  register: dirsrv_repl_suffix_check
+  changed_when: false
+  failed_when: false
+  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
   loop: "{{ dirsrv_repl_suffixes }}"
+
+- name: Enable | Assert suffix mapping tree exists
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+      - (item.stdout | default('')) | length > 0
+    fail_msg: >-
+      Suffix mapping tree missing for {{ item.item }} on {{ dirsrv_repl_this_node.host }}. Create the suffix in migrate flows first.
+  loop: "{{ dirsrv_repl_suffix_check.results | default([]) }}"
 
 - name: Enable | Assert replica-id present for suppliers/hubs
   vars:
