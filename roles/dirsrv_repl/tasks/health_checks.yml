@@ -19,9 +19,12 @@
     - name: Health Checks | Validate replica IDs are unique per suffix
       ansible.builtin.assert:
         that:
-          - item.value | map(attribute='value') | unique | length == item.value | length
+          - >-
+            ((item.value | default({})) | dict2items | map(attribute='value') | list | length)
+            ==
+            ((item.value | default({})) | dict2items | map(attribute='value') | list | unique | length)
         fail_msg: "Duplicate replica IDs found for suffix {{ item.key }}"
-      with_dict: "{{ dirsrv_repl_replica_ids }}"
+      with_dict: "{{ dirsrv_repl_replica_ids | default({}) }}"
       when: dirsrv_repl_require_unique_replica_ids | bool
 
     - name: Health Checks | Validate agreement targets exist
