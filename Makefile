@@ -44,6 +44,7 @@ help:
 	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, test_csr, down_389ds, reset_389ds"
 	@echo "         collection_build, collection_install_dev, collection_install_user"
 	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
+	@echo "         test_repl_idempotent (syntax + double-run, expects lab inventory)"
 
 # Design-aligned aliases
 .PHONY: up mesh verify down logs
@@ -274,6 +275,23 @@ test_repl_mesh:
 	@# Re-run mesh test with logging and bundle logs on failure
 	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds \
 		|| $(MAKE) bundle_logs
+
+# Idempotence: syntax check + two consecutive runs should result in 0 changes on second run
+.PHONY: test_repl_idempotent
+test_repl_idempotent: deps_podman
+	@set -e; \
+	# Syntax checks
+	ansible-playbook --syntax-check test/repl_mesh.yml; \
+	# First run
+	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-1.log || { echo "First run failed (see .ansible/test_logs/idempotence-1.log)" >&2; exit 1; }; \
+	# Second run (should be idempotent)
+	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-2.log || { echo "Second run failed (see .ansible/test_logs/idempotence-2.log)" >&2; exit 1; }; \
+	# Assert no changes in second recap
+	if grep -A2 -E "PLAY RECAP" .ansible/test_logs/idempotence-2.log | grep -E "changed=[1-9]"; then \
+	  echo "Idempotence failed: second run had changes" >&2; exit 1; \
+	else \
+	  echo "OK: idempotent (no changes on second run)"; \
+	fi
 # Fast mesh test: reuse containers, restore golden, run mesh only
 test_repl_mesh_fast: up_389ds_fast reset_soft repl_pod_mesh
 # Run CSR role for multi-instance scenario on ds-s1

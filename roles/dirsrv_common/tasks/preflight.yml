@@ -140,7 +140,7 @@
     that:
       - item.rc == 0
     fail_msg: "DNS resolution failed for {{ dirsrv_repl_nodes[item.item.1.to].host }}; fix Podman DNS or environment"
-  loop: "{{ __dirsrv_dns_checks.results | default([]) }}"
+  loop: "{{ (__dirsrv_dns_checks.results | default([])) | selectattr('rc','defined') | list }}"
   when:
     - __dirsrv_dns_checks is defined
   tags: [preflight]
@@ -151,7 +151,7 @@
   ansible.builtin.wait_for:
     host: "{{ target.host }}"
     port: "{{ target.port }}"
-    timeout: 5
+    timeout: 20
     sleep: 0
   with_subelements:
     - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
@@ -160,5 +160,41 @@
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
     - dirsrv_repl_nodes is defined
+    - item.1.from == inventory_hostname
+  tags: [preflight]
+
+- name: Preflight | Bind ping to replication targets (SIMPLE auth)
+  vars:
+    agree: "{{ item.1 }}"
+    target: "{{ dirsrv_repl_nodes[agree.to] }}"
+    _proto: "{{ target.protocol | lower }}"
+    _url: "{{ _proto }}://{{ target.host }}:{{ target.port }}"
+    _max_tries: 10
+  ansible.builtin.command:
+    argv:
+      - ldapwhoami
+      - -x
+      - -D
+      - "{{ dirsrv_repl_auth.bind_dn }}"
+      - -w
+      - "{{ dirsrv_repl_auth.bind_password }}"
+      - -H
+      - "{{ _url }}"
+  register: __dirsrv_bind_ping
+  changed_when: false
+  failed_when: false
+  no_log: true
+  until: __dirsrv_bind_ping.rc == 0
+  retries: "{{ _max_tries }}"
+  delay: 2
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
+    - value
+  when:
+    - dirsrv_repl_agreements is defined
+    - dirsrv_repl_agreements | length > 0
+    - dirsrv_repl_nodes is defined
+    - dirsrv_repl_auth is defined
+    - dirsrv_repl_auth.method | default('SIMPLE') == 'SIMPLE'
     - item.1.from == inventory_hostname
   tags: [preflight]

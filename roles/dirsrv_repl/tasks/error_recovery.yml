@@ -74,6 +74,7 @@
       when:
         - replica_lock_check.rc == 0
         - "locked" in (replica_lock_check.stdout | lower)
+        - not ansible_check_mode
 
 - name: Error Recovery | Handle suffix disabled errors
   block:
@@ -115,6 +116,7 @@
       when:
         - backend_status_check.rc == 0
         - "disabled" in (backend_status_check.stdout | lower)
+        - not ansible_check_mode
 
     - name: Error Recovery | Restart instance if suffix was disabled
       ansible.builtin.command:
@@ -125,7 +127,7 @@
       register: restart_instance
       changed_when: restart_instance.rc == 0
       failed_when: false
-      when: enable_suffix.changed | bool
+      when: not ansible_check_mode and enable_suffix is defined and (enable_suffix.changed | bool)
 
   # DNS resolution hacks removed; DNS is now gated in preflight
 
@@ -190,6 +192,7 @@
         - agreement_list_check.rc == 0
         - item.1.name in (agreement_list_check.stdout_lines | default([]))
         - "duplicate" in (agreement_list_check.stdout | lower)
+        - not ansible_check_mode
 
 - name: Error Recovery | Comprehensive error logging
   block:

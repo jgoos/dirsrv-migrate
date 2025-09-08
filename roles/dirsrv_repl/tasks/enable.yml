@@ -25,7 +25,7 @@
   register: _log_access_on
   changed_when: _log_access_on.rc == 0
   failed_when: false
-  when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0)
+  when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0) and (not ansible_check_mode)
 
 - name: Log | Enable audit log if supported (test-only)
   ansible.builtin.shell: |
@@ -40,7 +40,7 @@
   register: _log_audit_on
   changed_when: _log_audit_on.rc == 0
   failed_when: false
-  when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0)
+  when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0) and (not ansible_check_mode)
 
 - name: Enable | Verify suffix mapping tree exists (read-only)
   vars:
@@ -416,6 +416,7 @@
         (dirsrv_repl_mapstate_backend is defined and (dirsrv_repl_mapstate_backend.results | default([]) | length) > 0) or
         (dirsrv_repl_mapref_del is defined and (dirsrv_repl_mapref_del.results | default([]) | length) > 0)
       )
+    - not ansible_check_mode
 
 - name: Enable | Ensure replication manager exists (SIMPLE)
   directories.ds.ds_repl_manager:
@@ -427,6 +428,7 @@
   when:
     - dirsrv_repl_auth.method == 'SIMPLE'
     - dirsrv_repl_auth.bind_dn | lower == 'cn=replication manager,cn=config'
+    - not ansible_check_mode
 
 ## Password ensured by ds_repl_manager above
 
@@ -447,6 +449,7 @@
   when:
     - dirsrv_repl_auth.method == 'SIMPLE'
     - agree.to == inventory_hostname
+    - not ansible_check_mode
 
 - name: Enable | Ensure inbound bind DN present on this node for each suffix (SIMPLE)
   directories.ds.ds_repl_binddn_auth:
@@ -457,6 +460,7 @@
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
     - dirsrv_repl_auth.method == 'SIMPLE'
+    - not ansible_check_mode
 
 - name: Verify | Replication manager entry exists (guarded)
   ansible.builtin.command:

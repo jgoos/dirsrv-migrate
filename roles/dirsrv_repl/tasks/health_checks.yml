@@ -19,9 +19,12 @@
     - name: Health Checks | Validate replica IDs are unique per suffix
       ansible.builtin.assert:
         that:
-          - item.value | map(attribute='value') | unique | length == item.value | length
+          - >-
+            ((item.value | default({})) | dict2items | map(attribute='value') | list | length)
+            ==
+            ((item.value | default({})) | dict2items | map(attribute='value') | list | unique | length)
         fail_msg: "Duplicate replica IDs found for suffix {{ item.key }}"
-      with_dict: "{{ dirsrv_repl_replica_ids }}"
+      with_dict: "{{ dirsrv_repl_replica_ids | default({}) }}"
       when: dirsrv_repl_require_unique_replica_ids | bool
 
     - name: Health Checks | Validate agreements mapping (local outbound only)
@@ -34,6 +37,42 @@
       with_subelements:
         - "{{ dirsrv_repl_agreements | dict2items }}"
         - value
+      when: item.1.from == inventory_hostname
+
+- name: Health Checks | System readiness checks
+  block:
+    - name: Health Checks | Check time synchronization
+      ansible.builtin.command:
+        argv: [timedatectl, status]
+      register: time_sync_status
+      changed_when: false
+      failed_when: false
+      when: ansible_system is defined and ansible_system == "Linux"
+
+    - name: Health Checks | Warn if time sync issues detected
+      ansible.builtin.debug:
+        msg: "Time synchronization issues detected. Replication requires accurate time."
+        warn: true
+      when: 
+        - ansible_system is defined
+        - ansible_system == "Linux"
+        - time_sync_status.rc != 0 or "synchronized: yes" not in time_sync_status.stdout
+
+    - name: Health Checks | Check data directory status
+      ansible.builtin.stat:
+        path: "{{ dirsrv_data_dir | default(dirsrv_paths.data_dir) }}"
+      register: data_dir_stat
+
+    - name: Health Checks | Query free space for data directory
+      ansible.builtin.command:
+        argv:
+          - df
+          - -B1
+          - --output=avail
+          - "{{ dirsrv_data_dir | default('/var/lib/dirsrv') }}"
+      register: data_dir_space
+      changed_when: false
+      failed_when: false
 
 ## System readiness checks removed; covered elsewhere or out of scope here
 
@@ -70,6 +109,4 @@
 
 ## Replication state validation removed; convergence handled by ds_repl_wait
 
-## Mesh topology assertions removed to simplify orchestration
-
-## Post-operation verification removed; handled by wait_green
+## Replication state, topology, and post-op verification removed; handled by ds_repl_wait
