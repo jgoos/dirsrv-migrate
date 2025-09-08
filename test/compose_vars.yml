@@ -1,6 +1,6 @@
 ---
 # Test-only vars for local compose environment
-dirsrv_password: password
+dirsrv_password: "{{ vault_dirsrv_password | default('password') }}"
 # For 389ds prebuilt containers (no systemd exposed), skip service control
 dirsrv_manage_service: false
 # Container instances are named 'localhost' in the 389ds image
@@ -23,3 +23,9 @@ dirsrv_ldapi_uri: "ldapi://{{ dirsrv_ldapi_socket_path | regex_replace('/', '%2F
 # Skip config archive/schema extraction in containers
 dirsrv_collect_config: false
 dirsrv_manage_source_backends: true
+
+# Network configuration for lab containers
+dsnet_s1_ip: "10.89.1.6"
+dsnet_s2_ip: "10.89.1.8"
+dsnet_c1_ip: "10.89.1.4"
+dsnet_c2_ip: "10.89.1.5"

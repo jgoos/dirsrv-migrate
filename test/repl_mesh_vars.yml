@@ -1,7 +1,7 @@
 ---
 # Mesh replication test: 2 suppliers (ds-s1, ds-s2) and 2 consumers (ds-c1, ds-c2)
 
-dirsrv_password: password
+dirsrv_password: "{{ vault_dirsrv_password | default('password') }}"
 dirsrv_manage_service: false
 dirsrv_instance: "localhost"
 dirsrv_ldapi_socket_path: "/data/run/slapd-{{ dirsrv_instance }}.socket"

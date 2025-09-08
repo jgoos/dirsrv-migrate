@@ -156,7 +156,7 @@
   block:
     - name: Error Recovery | Check LDAPI socket accessibility
       ansible.builtin.stat:
-        path: "{{ dirsrv_ldapi_socket_path | default('/data/run/slapd-localhost.socket') }}"
+        path: "{{ dirsrv_ldapi_socket_path | default(dirsrv_paths.run_dir + '/slapd-' + dirsrv_instance + '.socket') }}"
       register: ldapi_socket_stat
 
     - name: Error Recovery | Try alternative LDAPI socket path
@@ -261,6 +261,6 @@
           
           Replication Status:
           {{ replication_status_debug.results | to_nice_json }}
-        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/replication_debug_{{ inventory_hostname }}.txt"
+        dest: "{{ dirsrv_artifact_root_effective | default(dirsrv_paths.tmp_dir) }}/replication_debug_{{ inventory_hostname }}.txt"
         mode: "0644"
       when: dirsrv_debug | bool

@@ -76,6 +76,12 @@ up_389ds: pull_if_needed net
 	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost-certs \
 	    .ansible/containers/$$svc/var-log-dirsrv-slapd-localhost; \
 	done
+	@# Set default environment variables for compose
+	@export DIRSRV_PASSWORD=$${DIRSRV_PASSWORD:-password}; \
+	export DSNET_S1_IP=$${DSNET_S1_IP:-10.89.1.6}; \
+	export DSNET_S2_IP=$${DSNET_S2_IP:-10.89.1.8}; \
+	export DSNET_C1_IP=$${DSNET_C1_IP:-10.89.1.4}; \
+	export DSNET_C2_IP=$${DSNET_C2_IP:-10.89.1.5}; \
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up)
 
 up_389ds_fast: net
@@ -212,9 +218,21 @@ test_csr:
 		|| $(MAKE) bundle_logs
 
 down_389ds:
+	@# Set default environment variables for compose
+	@export DIRSRV_PASSWORD=$${DIRSRV_PASSWORD:-password}; \
+	export DSNET_S1_IP=$${DSNET_S1_IP:-10.89.1.6}; \
+	export DSNET_S2_IP=$${DSNET_S2_IP:-10.89.1.8}; \
+	export DSNET_C1_IP=$${DSNET_C1_IP:-10.89.1.4}; \
+	export DSNET_C2_IP=$${DSNET_C2_IP:-10.89.1.5}; \
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down,compose_down)
 
 reset_389ds:
+	@# Set default environment variables for compose
+	@export DIRSRV_PASSWORD=$${DIRSRV_PASSWORD:-password}; \
+	export DSNET_S1_IP=$${DSNET_S1_IP:-10.89.1.6}; \
+	export DSNET_S2_IP=$${DSNET_S2_IP:-10.89.1.8}; \
+	export DSNET_C1_IP=$${DSNET_C1_IP:-10.89.1.4}; \
+	export DSNET_C2_IP=$${DSNET_C2_IP:-10.89.1.5}; \
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v || true,compose_down_purge)
 	rm -rf .ansible/artifacts/compose-dev || true
 

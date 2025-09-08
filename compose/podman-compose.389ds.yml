@@ -11,16 +11,16 @@ services:
     container_name: ds-s1
     hostname: s1.dsnet.test
     environment:
-      - DS_DM_PASSWORD=password
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
     networks:
       dsnet:
         aliases: [ds-s1, s1.dsnet.test]
     extra_hosts:
-      - "s2.dsnet.test:10.89.1.8"
-      - "c1.dsnet.test:10.89.1.4"
-      - "c2.dsnet.test:10.89.1.5"
+      - "s2.dsnet.test:${DSNET_S2_IP:-10.89.1.8}"
+      - "c1.dsnet.test:${DSNET_C1_IP:-10.89.1.4}"
+      - "c2.dsnet.test:${DSNET_C2_IP:-10.89.1.5}"
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
@@ -49,16 +49,16 @@ services:
     container_name: ds-s2
     hostname: s2.dsnet.test
     environment:
-      - DS_DM_PASSWORD=password
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
     networks:
       dsnet:
         aliases: [ds-s2, s2.dsnet.test]
     extra_hosts:
-      - "s1.dsnet.test:10.89.1.6"
-      - "c1.dsnet.test:10.89.1.4"
-      - "c2.dsnet.test:10.89.1.5"
+      - "s1.dsnet.test:${DSNET_S1_IP:-10.89.1.6}"
+      - "c1.dsnet.test:${DSNET_C1_IP:-10.89.1.4}"
+      - "c2.dsnet.test:${DSNET_C2_IP:-10.89.1.5}"
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
@@ -83,16 +83,16 @@ services:
     container_name: ds-c1
     hostname: c1.dsnet.test
     environment:
-      - DS_DM_PASSWORD=password
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
     networks:
       dsnet:
         aliases: [ds-c1, c1.dsnet.test]
     extra_hosts:
-      - "s1.dsnet.test:10.89.1.6"
-      - "s2.dsnet.test:10.89.1.8"
-      - "c2.dsnet.test:10.89.1.5"
+      - "s1.dsnet.test:${DSNET_S1_IP:-10.89.1.6}"
+      - "s2.dsnet.test:${DSNET_S2_IP:-10.89.1.8}"
+      - "c2.dsnet.test:${DSNET_C2_IP:-10.89.1.5}"
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
@@ -117,16 +117,16 @@ services:
     container_name: ds-c2
     hostname: c2.dsnet.test
     environment:
-      - DS_DM_PASSWORD=password
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
       - DS_PORT=389
     networks:
       dsnet:
         aliases: [ds-c2, c2.dsnet.test]
     extra_hosts:
-      - "s1.dsnet.test:10.89.1.6"
-      - "s2.dsnet.test:10.89.1.8"
-      - "c1.dsnet.test:10.89.1.4"
+      - "s1.dsnet.test:${DSNET_S1_IP:-10.89.1.6}"
+      - "s2.dsnet.test:${DSNET_S2_IP:-10.89.1.8}"
+      - "c1.dsnet.test:${DSNET_C1_IP:-10.89.1.4}"
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s

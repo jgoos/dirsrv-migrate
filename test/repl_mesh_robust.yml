@@ -88,7 +88,7 @@
     # Enable comprehensive debugging
     dirsrv_debug: true
     dirsrv_log_capture: true
-    dirsrv_artifact_root_effective: "/tmp/ansible_artifacts"
+    dirsrv_artifact_root_effective: "{{ dirsrv_paths.tmp_dir }}/ansible_artifacts"
     
     # Enhanced mesh configuration
     dirsrv_repl_suffixes:

@@ -98,6 +98,24 @@ dirsrv_repl_require_unique_replica_ids: true
 # Uses repo-standard var name already declared elsewhere
 
 # Lab-only features
+
+# Configurable paths (can be overridden for different environments)
+dirsrv_paths:
+  data_dir: "/var/lib/dirsrv"
+  run_dir: "/var/run/dirsrv"
+  config_dir: "/etc/dirsrv"
+  log_dir: "/var/log/dirsrv"
+  tmp_dir: "/tmp"
+  ansible_tmp_dir: "/tmp/.ansible"
+  
+# Network configuration for lab environments
+dirsrv_network:
+  dsnet_subnet: "10.89.1.0/24"
+  container_ips:
+    s1: "10.89.1.6"
+    s2: "10.89.1.8"
+    c1: "10.89.1.4"
+    c2: "10.89.1.5"
 rhds_disable_referrals: false
 
 # Test-only observability switches (default off)
