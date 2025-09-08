@@ -140,7 +140,7 @@
     that:
       - item.rc == 0
     fail_msg: "DNS resolution failed for {{ dirsrv_repl_nodes[item.item.1.to].host }}; fix Podman DNS or environment"
-  loop: "{{ __dirsrv_dns_checks.results | default([]) }}"
+  loop: "{{ (__dirsrv_dns_checks.results | default([])) | selectattr('rc','defined') | list }}"
   when:
     - __dirsrv_dns_checks is defined
   tags: [preflight]
