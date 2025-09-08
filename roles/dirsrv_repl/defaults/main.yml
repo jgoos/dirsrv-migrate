@@ -46,6 +46,30 @@ dirsrv_repl_strip_list:
 dirsrv_repl_release_timeout: 60        # seconds
 dirsrv_repl_set_release_timeout: true
 
+# Adaptive retry and timeout settings
+dirsrv_repl_retry_settings:
+  # Base retry configuration
+  max_retries: 30
+  base_delay: 2
+  max_delay: 60
+  backoff_multiplier: 1.5
+  
+  # Specific operation timeouts (seconds)
+  operation_timeouts:
+    ldapi_health_check: 30
+    remote_bind_check: 120
+    agreement_creation: 60
+    agreement_init: 300
+    init_status_poll: 600
+    final_verification: 180
+  
+  # Mesh-specific settings
+  mesh_settings:
+    supplier_steady_gate_delay: 10
+    secondary_supplier_delay: 30
+    agreement_serialization_delay: 5
+    changelog_verification_delay: 15
+
 # Changelog management
 dirsrv_repl_changelog:
   purge_enabled: true

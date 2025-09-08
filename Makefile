@@ -168,6 +168,17 @@ test_repl:
 	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds deps_podman seed_389ds repl_pod verify_389ds \
 		|| $(MAKE) bundle_logs
 
+# Robust mesh replication test with comprehensive error handling
+test_repl_mesh_robust:
+	@echo "=== Running robust mesh replication test ==="
+	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds
+	@echo "=== Configuring robust mesh replication ==="
+	ansible-playbook -i inventories/lab/hosts.yml test/repl_mesh_robust.yml \
+		-e @test/compose_vars.yml \
+		-e @test/repl_mesh_vars.yml \
+		$(ARGS) || $(MAKE) bundle_logs
+	@echo "=== Robust mesh test completed ==="
+
 # Run CSR role against compose lab
 csr_pod:
 	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \

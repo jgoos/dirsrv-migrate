@@ -41,6 +41,18 @@
 - name: Preflight | Warn if time sync service inactive (chronyd/ntpd/timesyncd)
   ansible.builtin.debug:
     msg: "Time sync service not active (chronyd/ntpd/systemd-timesyncd). Replication CSNs require correct time."
+
+- name: Preflight | Include comprehensive health checks
+  ansible.builtin.include_tasks: health_checks.yml
+  when: not ansible_check_mode
+
+- name: Preflight | Include monitoring setup
+  ansible.builtin.include_tasks: monitoring.yml
+  when: not ansible_check_mode
+
+- name: Preflight | Additional time sync warning
+  ansible.builtin.debug:
+    msg: "Time sync service not active (chronyd/ntpd/systemd-timesyncd). Replication CSNs require correct time."
     warn: true
   when: >-
     (ansible_facts.services is defined) and not (

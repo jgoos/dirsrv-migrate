@@ -1,0 +1,216 @@
+---
+# Robust mesh replication test with comprehensive error handling and monitoring
+# This test includes all the improvements for handling edge cases and failures
+
+- name: Robust Mesh Replication Test | Pre-flight validation
+  hosts: all
+  gather_facts: true
+  vars:
+    # Enhanced retry settings for mesh topology
+    dirsrv_repl_retry_settings:
+      max_retries: 50
+      base_delay: 3
+      max_delay: 120
+      backoff_multiplier: 1.8
+      jitter: true
+      circuit_breaker_threshold: 8
+      operation_timeouts:
+        ldapi_health_check: 60
+        remote_bind_check: 180
+        agreement_creation: 120
+        agreement_init: 600
+        init_status_poll: 900
+        final_verification: 300
+      mesh_settings:
+        supplier_steady_gate_delay: 15
+        secondary_supplier_delay: 45
+        agreement_serialization_delay: 10
+        changelog_verification_delay: 20
+
+  tasks:
+    - name: Robust Test | Validate mesh topology requirements
+      ansible.builtin.assert:
+        that:
+          - groups['dirsrv_suppliers'] is defined
+          - groups['dirsrv_suppliers'] | length >= 2
+          - groups['dirsrv_consumers'] is defined
+          - groups['dirsrv_consumers'] | length >= 2
+        fail_msg: "Mesh test requires at least 2 suppliers and 2 consumers"
+
+    - name: Robust Test | Check container health
+      ansible.builtin.command:
+        argv: [podman, ps, --format, json]
+      register: container_health
+      changed_when: false
+      failed_when: false
+      delegate_to: localhost
+
+    - name: Robust Test | Verify all containers are running
+      ansible.builtin.assert:
+        that:
+          - item.state == "running"
+        fail_msg: "Container {{ item.names[0] }} is not running (state: {{ item.state }})"
+      loop: "{{ container_health.stdout | from_json }}"
+      when: container_health.rc == 0
+
+- name: Robust Mesh Replication Test | Network connectivity validation
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Robust Test | Test inter-container connectivity
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -H
+          - "ldap://{{ item }}:3389"
+          - -s
+          - base
+          - -b
+          - ""
+          - "1.1"
+      register: connectivity_test
+      changed_when: false
+      failed_when: false
+      loop: "{{ groups['all'] | map('regex_replace', '^ds-', '') | map('regex_replace', '$', '.dsnet.test') | list }}"
+
+    - name: Robust Test | Verify connectivity to all hosts
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+        fail_msg: "Cannot connect to {{ item.item }}:3389"
+      loop: "{{ connectivity_test.results }}"
+
+- name: Robust Mesh Replication Test | Configure replication with enhanced monitoring
+  hosts: all
+  gather_facts: false
+  vars:
+    # Enable comprehensive debugging
+    dirsrv_debug: true
+    dirsrv_log_capture: true
+    dirsrv_artifact_root_effective: "/tmp/ansible_artifacts"
+    
+    # Enhanced mesh configuration
+    dirsrv_repl_suffixes:
+      - "dc=example,dc=com"
+    
+    dirsrv_repl_nodes:
+      ds-s1: { role: supplier, instance: "localhost", host: "s1.dsnet.test", port: 3389, protocol: LDAP }
+      ds-c1: { role: consumer, instance: "localhost", host: "c1.dsnet.test", port: 3389, protocol: LDAP }
+      ds-s2: { role: supplier, instance: "localhost", host: "s2.dsnet.test", port: 3389, protocol: LDAP }
+      ds-c2: { role: consumer, instance: "localhost", host: "c2.dsnet.test", port: 3389, protocol: LDAP }
+    
+    dirsrv_repl_replica_ids:
+      "dc=example,dc=com":
+        ds-s1: 1
+        ds-s2: 2
+    
+    dirsrv_repl_auth:
+      method: SIMPLE
+      bind_dn: "cn=Directory Manager"
+      bind_password: "{{ dirsrv_password }}"
+    
+    # Enhanced agreement configuration with proper sequencing
+    dirsrv_repl_agreements:
+      "dc=example,dc=com":
+        # Primary supplier agreements (initialized first)
+        - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true, priority: 1 }
+        - { from: "ds-s1", to: "ds-s2", name: "s1-to-s2", init: true, priority: 2 }
+        # Secondary supplier agreements (initialized after primary)
+        - { from: "ds-s2", to: "ds-s1", name: "s2-to-s1", init: true, priority: 3 }
+        - { from: "ds-s2", to: "ds-c2", name: "s2-to-c2", init: true, priority: 4 }
+    
+    # Enhanced safety settings
+    dirsrv_repl_fail_if_uninitialized_supplier: true
+    dirsrv_repl_guard_bidirectional_init: true
+    dirsrv_repl_require_unique_replica_ids: true
+    dirsrv_repl_set_release_timeout: true
+    dirsrv_repl_release_timeout: 90
+
+  roles:
+    - role: dirsrv_repl
+
+- name: Robust Mesh Replication Test | Comprehensive verification
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Robust Test | Verify all agreements are healthy
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "cn=Directory Manager"
+          - -w
+          - "{{ dirsrv_password }}"
+          - ldap://localhost:3389
+          - repl-agmt
+          - init-status
+          - --suffix
+          - "dc=example,dc=com"
+          - "{{ item }}"
+      register: agreement_health_check
+      changed_when: false
+      failed_when: false
+      loop:
+        - "s1-to-c1"
+        - "s1-to-s2"
+        - "s2-to-s1"
+        - "s2-to-c2"
+      when: item in (groups[inventory_hostname] | default([]))
+
+    - name: Robust Test | Assert all agreements are healthy
+      ansible.builtin.assert:
+        that:
+          - item.rc == 0
+          - "successfully initialized" in (item.stdout | lower)
+        fail_msg: "Agreement {{ item.item }} is not healthy: {{ item.stdout }}"
+      loop: "{{ agreement_health_check.results }}"
+      when: agreement_health_check.results is defined
+
+    - name: Robust Test | Verify data replication
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -H
+          - ldap://localhost:3389
+          - -s
+          - sub
+          - -b
+          - "dc=example,dc=com"
+          - "(objectClass=*)"
+      register: data_verification
+      changed_when: false
+      failed_when: false
+
+    - name: Robust Test | Assert data is replicated
+      ansible.builtin.assert:
+        that:
+          - data_verification.rc == 0
+          - data_verification.stdout_lines | length > 5
+        fail_msg: "Data replication verification failed on {{ inventory_hostname }}"
+
+- name: Robust Mesh Replication Test | Performance metrics
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Robust Test | Collect final performance metrics
+      ansible.builtin.command:
+        argv: [date, '+%s']
+      register: test_end_time
+      changed_when: false
+
+    - name: Robust Test | Calculate test duration
+      ansible.builtin.set_fact:
+        test_duration: "{{ test_end_time.stdout | int - ansible_date_time.epoch | int }}"
+
+    - name: Robust Test | Report test completion
+      ansible.builtin.debug:
+        msg: |
+          Robust Mesh Replication Test Completed Successfully
+          =================================================
+          Host: {{ inventory_hostname }}
+          Duration: {{ test_duration }} seconds
+          Status: PASSED
+          Agreements: All healthy
+          Data: Replicated successfully

@@ -1,0 +1,258 @@
+---
+# Comprehensive monitoring and diagnostic tasks for replication operations
+# These tasks provide detailed insights into replication health and performance
+
+- name: Monitoring | Pre-operation baseline collection
+  block:
+    - name: Monitoring | Collect system baseline metrics
+      ansible.builtin.set_fact:
+        baseline_metrics:
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          hostname: "{{ inventory_hostname }}"
+          uptime: "{{ ansible_uptime_seconds }}"
+          memory_total: "{{ ansible_memtotal_mb }}"
+          memory_available: "{{ ansible_memavailable_mb | default(ansible_memfree_mb) }}"
+          disk_usage: "{{ ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first }}"
+
+    - name: Monitoring | Collect replication baseline status
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - replication
+          - get
+          - --suffix
+          - "{{ item }}"
+      register: baseline_replication_status
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+
+    - name: Monitoring | Store baseline metrics
+      ansible.builtin.copy:
+        content: "{{ baseline_metrics | to_nice_json }}"
+        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/baseline_{{ inventory_hostname }}.json"
+        mode: "0644"
+      when: dirsrv_debug | bool
+
+- name: Monitoring | Real-time replication monitoring
+  block:
+    - name: Monitoring | Monitor agreement status during operations
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - repl-agmt
+          - list
+          - --suffix
+          - "{{ item.0.key }}"
+      register: agreement_status_monitor
+      changed_when: false
+      failed_when: false
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Monitoring | Check replication lag
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - -H
+          - "{{ dirsrv_repl_conn_url }}"
+          - -s
+          - base
+          - -b
+          - "cn=replica,cn={{ item | regex_replace('dc=', 'dc\\3D') | regex_replace(',', '\\2C') }},cn=mapping tree,cn=config"
+          - "nsds5replicaLastUpdateStatus"
+      register: replication_lag_check
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+
+    - name: Monitoring | Monitor changelog health
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - -H
+          - "{{ dirsrv_repl_conn_url }}"
+          - -s
+          - base
+          - -b
+          - "cn=changelog"
+          - "objectClass"
+      register: changelog_health_check
+      changed_when: false
+      failed_when: false
+
+- name: Monitoring | Performance metrics collection
+  block:
+    - name: Monitoring | Measure operation duration
+      ansible.builtin.set_fact:
+        operation_start_time: "{{ ansible_date_time.epoch }}"
+
+    - name: Monitoring | Collect CPU and memory usage
+      ansible.builtin.command:
+        argv: [ps, -o, pid,ppid,cmd,%cpu,%mem,etime, -p, "{{ ansible_pid }}"]
+      register: process_metrics
+      changed_when: false
+      failed_when: false
+
+    - name: Monitoring | Monitor network connectivity
+      ansible.builtin.command:
+        argv:
+          - ss
+          - -tuln
+          - -p
+      register: network_connections
+      changed_when: false
+      failed_when: false
+
+- name: Monitoring | Post-operation health verification
+  block:
+    - name: Monitoring | Verify all agreements are healthy
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - repl-agmt
+          - init-status
+          - --suffix
+          - "{{ item.0.key }}"
+          - "{{ item.1.name }}"
+      register: post_operation_health_check
+      changed_when: false
+      failed_when: false
+      with_subelements:
+        - "{{ dirsrv_repl_agreements | dict2items }}"
+        - value
+      when: item.1.from == inventory_hostname
+
+    - name: Monitoring | Generate health report
+      ansible.builtin.set_fact:
+        health_report:
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+          hostname: "{{ inventory_hostname }}"
+          total_agreements: "{{ (dirsrv_repl_agreements | dict2items | map(attribute='value') | selectattr('from', 'equalto', inventory_hostname) | list | length) }}"
+          healthy_agreements: "{{ (post_operation_health_check.results | selectattr('rc', 'equalto', 0) | selectattr('stdout', 'search', 'successfully initialized') | list | length) }}"
+          failed_agreements: "{{ (post_operation_health_check.results | selectattr('rc', 'not_equalto', 0) | list | length) }}"
+          operation_duration: "{{ ansible_date_time.epoch | int - operation_start_time | int }}"
+
+    - name: Monitoring | Save health report
+      ansible.builtin.copy:
+        content: "{{ health_report | to_nice_json }}"
+        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/health_report_{{ inventory_hostname }}.json"
+        mode: "0644"
+      when: dirsrv_debug | bool
+
+- name: Monitoring | Alert on critical issues
+  block:
+    - name: Monitoring | Check for critical replication errors
+      ansible.builtin.set_fact:
+        critical_errors: >-
+          {{
+            post_operation_health_check.results |
+            selectattr('rc', 'not_equalto', 0) |
+            selectattr('stderr', 'search', 'critical|fatal|error') |
+            list
+          }}
+
+    - name: Monitoring | Alert on critical errors
+      ansible.builtin.fail:
+        msg: "Critical replication errors detected: {{ critical_errors | map(attribute='stderr') | list }}"
+      when: critical_errors | length > 0
+
+    - name: Monitoring | Warn on non-critical issues
+      ansible.builtin.debug:
+        msg: "Non-critical replication issues detected: {{ post_operation_health_check.results | selectattr('rc', 'not_equalto', 0) | map(attribute='stderr') | list }}"
+        warn: true
+      when: 
+        - post_operation_health_check.results | selectattr('rc', 'not_equalto', 0) | list | length > 0
+        - critical_errors | length == 0
+
+- name: Monitoring | Generate comprehensive diagnostics
+  block:
+    - name: Monitoring | Collect full replication status
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - "{{ dirsrv_repl_conn_url }}"
+          - replication
+          - get
+          - --suffix
+          - "{{ item }}"
+      register: full_replication_status
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+
+    - name: Monitoring | Collect agreement details
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -D
+          - "{{ dirsrv_dm_dn }}"
+          - -w
+          - "{{ dirsrv_password }}"
+          - -H
+          - "{{ dirsrv_repl_conn_url }}"
+          - -s
+          - sub
+          - -b
+          - "cn=replica,cn={{ item | regex_replace('dc=', 'dc\\3D') | regex_replace(',', '\\2C') }},cn=mapping tree,cn=config"
+          - "objectClass=nsDS5ReplicationAgreement"
+      register: agreement_details
+      changed_when: false
+      failed_when: false
+      loop: "{{ dirsrv_repl_suffixes }}"
+
+    - name: Monitoring | Generate comprehensive diagnostics report
+      ansible.builtin.copy:
+        content: |
+          Comprehensive Replication Diagnostics
+          ====================================
+          
+          Host: {{ inventory_hostname }}
+          Timestamp: {{ ansible_date_time.iso8601 }}
+          
+          System Metrics:
+          {{ baseline_metrics | to_nice_json }}
+          
+          Replication Status:
+          {{ full_replication_status.results | to_nice_json }}
+          
+          Agreement Details:
+          {{ agreement_details.results | to_nice_json }}
+          
+          Health Report:
+          {{ health_report | to_nice_json }}
+        dest: "{{ dirsrv_artifact_root_effective | default('/tmp') }}/comprehensive_diagnostics_{{ inventory_hostname }}.txt"
+        mode: "0644"
+      when: dirsrv_debug | bool
