@@ -162,6 +162,22 @@ def run_module():
         # Idempotence guard: tolerate already-enabled state
         if 'already enabled' in stderr or 'replication is already enabled' in stderr:
             module.exit_json(changed=False, enabled=True)
+        # Handle replica conflict errors (mesh topology issue)
+        if 'replica with dn' in stderr and 'already in the hash' in stderr:
+            module.fail_json(
+                msg="Replica conflict detected - stale replication state in memory. Restart the instance to clear state.",
+                rc=cp.returncode, 
+                stderr=cp.stderr.decode(errors='ignore'),
+                suggestion="Restart the 389-DS instance to clear stale replication state"
+            )
+        # Handle generation ID mismatch
+        if 'different database generation id' in stderr or 'generation id' in stderr:
+            module.fail_json(
+                msg="Generation ID mismatch detected - replicas have inconsistent database states",
+                rc=cp.returncode,
+                stderr=cp.stderr.decode(errors='ignore'),
+                suggestion="Check replica initialization order and ensure consistent database states"
+            )
         module.fail_json(msg="dsconf replication enable failed", rc=cp.returncode, stderr=cp.stderr.decode(errors='ignore'))
 
     # Post-check

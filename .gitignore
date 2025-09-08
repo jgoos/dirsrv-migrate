@@ -33,3 +33,52 @@ collections/ansible_collections/directories/ds/*.tar.gz
 ## ansible-test local artifacts (never commit)
 collections/ansible_collections/**/tests/output/
 collections/ansible_collections/**/tests/output/**
+
+# Log files - never commit
+*.log
+*.log.*
+mesh_test*.log
+test_output*.log
+*.out
+*.err
+
+# Ansible log files
+.ansible/test_logs/
+.ansible/artifacts/
+ansible-run.log
+
+# Test output files
+test_output_*.log
+mesh_test_output.log
+mesh_test_*.log
+test_output_*.log
+test_output_*.out
+test_output_*.err
+
+# Temporary test files
+test_*.log
+debug_*.log
+trace_*.log
+
+# Additional log patterns
+*.log.*
+*.log.gz
+*.log.bz2
+*.log.xz
+*.log.1
+*.log.2
+*.log.3
+*.log.4
+*.log.5
+
+# System and application logs
+/var/log/
+/var/logs/
+logs/
+log/
+
+# Performance and monitoring logs
+*.perf
+*.trace
+*.profile
+*.stats

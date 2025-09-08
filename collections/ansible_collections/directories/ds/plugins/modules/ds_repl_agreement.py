@@ -106,6 +106,7 @@ def run_module():
         suffix=dict(type='str', required=True),
         consumer_host=dict(type='str', required=True),
         consumer_port=dict(type='int', default=636),
+        name=dict(type='str'),
         bind_method=dict(type='str', choices=['simple', 'sslclientauth'], default='simple'),
         bind_dn=dict(type='str'),
         bind_pw=dict(type='str', no_log=True),
@@ -138,21 +139,24 @@ def run_module():
 
     p = module.params
 
-    conn = dsldap.LdapConnParams(
-        instance=p['instance'],
-        use_ldapi=p['use_ldapi'],
-        ldaps_host=p.get('ldaps_host'),
-        ldaps_port=p.get('ldaps_port'),
-        bind_method=p.get('bind_method'),
-        bind_dn=p.get('bind_dn'),
-        bind_pw=p.get('bind_pw'),
-        tls_ca=p.get('tls_ca'),
-        tls_client_cert=p.get('tls_client_cert'),
-        tls_client_key=p.get('tls_client_key'),
-        connect_timeout=p.get('connect_timeout'),
-        op_timeout=p.get('op_timeout'),
-    )
-    client = dsldap.DsLdap(conn)
+    try:
+        conn = dsldap.LdapConnParams(
+            instance=p['instance'],
+            use_ldapi=p['use_ldapi'],
+            ldaps_host=p.get('ldaps_host'),
+            ldaps_port=p.get('ldaps_port'),
+            bind_method=p.get('bind_method'),
+            bind_dn=p.get('bind_dn'),
+            bind_pw=p.get('bind_pw'),
+            tls_ca=p.get('tls_ca'),
+            tls_client_cert=p.get('tls_client_cert'),
+            tls_client_key=p.get('tls_client_key'),
+            connect_timeout=p.get('connect_timeout'),
+            op_timeout=p.get('op_timeout'),
+        )
+        client = dsldap.DsLdap(conn)
+    except Exception as e:
+        module.fail_json(msg=f"Failed to create LDAP connection: {str(e)}")
 
     esc_suffix = _escape_suffix_value(p['suffix'])
     replica_dn = f"cn=replica,cn={esc_suffix},cn=mapping tree,cn=config"
@@ -161,14 +165,28 @@ def run_module():
     except dsldap.DsLdapError as e:
         module.fail_json(msg=f"Enable replication on suffix before creating agreements: {p['suffix']}", hint=getattr(e, 'hint', None))
 
-    filter_hp = f"(&(objectClass=nsDS5ReplicationAgreement)(nsds5ReplicaHost={p['consumer_host']})(nsds5ReplicaPort={p['consumer_port']}))"
-    try:
-        existing = client.search(replica_dn, 'one', filter_hp, [
-            'cn', 'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN', 'nsds5ReplicaEnabled',
-            'nsds5ReplicaTransportInfo', 'nsds5ReplicaBackoffMin', 'nsds5ReplicaBackoffMax', 'nsds5ReplicaPurgeDelay', 'nsds5ReplicaBindMethod'
-        ])
-    except Exception:
-        existing = []
+    # Search for existing agreements by name first, then by host:port
+    existing = []
+    if p.get('name'):
+        filter_name = f"(&(objectClass=nsDS5ReplicationAgreement)(cn={p['name']}))"
+        try:
+            existing = client.search(replica_dn, 'one', filter_name, [
+                'cn', 'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN', 'nsds5ReplicaEnabled',
+                'nsds5ReplicaTransportInfo', 'nsds5ReplicaBackoffMin', 'nsds5ReplicaBackoffMax', 'nsds5ReplicaPurgeDelay', 'nsds5ReplicaBindMethod'
+            ])
+        except Exception:
+            existing = []
+    
+    # If no agreement found by name, search by host:port
+    if not existing:
+        filter_hp = f"(&(objectClass=nsDS5ReplicationAgreement)(nsds5ReplicaHost={p['consumer_host']})(nsds5ReplicaPort={p['consumer_port']}))"
+        try:
+            existing = client.search(replica_dn, 'one', filter_hp, [
+                'cn', 'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN', 'nsds5ReplicaEnabled',
+                'nsds5ReplicaTransportInfo', 'nsds5ReplicaBackoffMin', 'nsds5ReplicaBackoffMax', 'nsds5ReplicaPurgeDelay', 'nsds5ReplicaBindMethod'
+            ])
+        except Exception:
+            existing = []
 
     warnings = []
     agmt_dn = ''
@@ -182,10 +200,14 @@ def run_module():
         'nsds5ReplicaHost': p['consumer_host'],
         'nsds5ReplicaPort': str(p['consumer_port']),
         'nsds5ReplicaTransportInfo': target_transport,
+        'nsds5ReplicaRoot': p['suffix'],
+        'description': f"agmt to {p['consumer_host']}:{p['consumer_port']}",
     }
     if p['bind_method'] == 'simple' and p.get('bind_dn'):
         target_attrs['nsds5ReplicaBindDN'] = p['bind_dn']
         target_attrs['nsds5ReplicaBindMethod'] = 'SIMPLE'
+        if p.get('bind_pw'):
+            target_attrs['nsds5ReplicaCredentials'] = p['bind_pw']
     elif p['bind_method'] == 'sslclientauth':
         target_attrs['nsds5ReplicaBindMethod'] = 'SSLCLIENTAUTH'
     if p.get('backoff_min') is not None:
@@ -210,7 +232,7 @@ def run_module():
         module.exit_json(changed=changed, agreement_dn=agmt_dn, warnings=warnings)
 
     if not agmt_dn:
-        cn_val = f"agmt to {p['consumer_host']}:{p['consumer_port']}"
+        cn_val = p.get('name') or f"agmt to {p['consumer_host']}:{p['consumer_port']}"
         agmt_dn = f"cn={cn_val},{replica_dn}"
         if not module.check_mode:
             add_attrs = {
