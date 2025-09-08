@@ -4,7 +4,7 @@
     msg: "No replication agreements defined; skipping wait"
   when: (dirsrv_repl_agreements | length | int) == 0
 
-- name: Wait | Compute local dsconf URL when missing
+- name: Wait | Compute local connection URL when missing
   ansible.builtin.set_fact:
     dirsrv_repl_conn_url: >-
       {{
@@ -26,85 +26,7 @@
     dirsrv_artifact_root_effective: "{{ [playbook_dir, '.ansible', 'artifacts'] | path_join }}"
   when: dirsrv_artifact_root_effective is not defined
 
-- name: Wait | Agreements healthy (with snapshot on failure)
-  block:
-    - name: Wait | Until each local agreement is healthy
-      vars:
-        agmt_suffix: "{{ item.0.key }}"
-        agmt: "{{ item.1 }}"
-        tries: "{{ rhds_repl_wait_max_retries | default(120) }}"
-        poll_delay: "{{ rhds_repl_wait_delay | default(3) }}"
-        suffix_dn_esc: "cn={{ agmt_suffix | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config"
-        agmt_dn: "cn={{ agmt.name }},cn=replica,{{ suffix_dn_esc }}"
-        __ldap_auth: >-
-          {{ ['-Y','EXTERNAL'] if (dirsrv_repl_conn_url | default('') | regex_search('^ldapi://')) else ['-x','-D', dirsrv_dm_dn, '-w', dirsrv_password] }}
-        __argv: >-
-          {{ ['ldapsearch'] + __ldap_auth + ['-LLL','-H', dirsrv_repl_conn_url, '-s','base','-b', agmt_dn,
-              'nsds5replicaLastInitStatusJSON','nsds5replicaLastUpdateStatusJSON','nsDS5ReplicaUpdateInProgress'] }}
-      ansible.builtin.command:
-        argv: "{{ __argv }}"
-      register: out
-      no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-      changed_when: false
-      failed_when: false
-      until: >-
-        (
-          (out.stdout | default('')) is search('"error"\s*:\s*0') or
-          (out.stdout | default('')) is search('Total update succeeded|Incremental update succeeded|Replica acquired successfully|successfully initialized')
-        )
-        and not ((out.stdout | default('') | lower) is search('updateinprogress: true'))
-      retries: "{{ tries }}"
-      delay: "{{ poll_delay }}"
-      with_subelements:
-        - "{{ dirsrv_repl_agreements | dict2items }}"
-        - value
-      when:
-        - agmt.from == inventory_hostname
-  rescue:
-    - name: Snapshot | Ensure local artifacts dir exists (controller)
-      ansible.builtin.file:
-        path: "{{ [dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join), inventory_hostname] | path_join }}"
-        state: directory
-        mode: "0750"
-      connection: local
-      delegate_to: localhost
-      become: false
-      when: dirsrv_debug | bool
-    - name: Snapshot | Agreements wait last results (test-only)
-      vars:
-        res: "{{ item }}"
-        suffix: "{{ item.item.0.key | default('') }}"
-        agree: "{{ item.item.1.name | default('') }}"
-        __snap_dir: "{{ [dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join), inventory_hostname] | path_join }}"
-        __raw_cmd: "{{ (res.cmd | default('')) | string }}"
-        __san_cmd: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
-        __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
-        __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
-      ansible.builtin.copy:
-        content: |
-          {{ {
-              'host': inventory_hostname,
-              'step': 'wait-green-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
-              'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
-              'argv_redacted': __san_cmd,
-              'rc': res.rc | default(-1),
-              'stdout_excerpt': (res.stdout | default(''))[:2048],
-              'stderr_excerpt': (res.stderr | default(''))[:2048],
-              'duration_ms': __dur_ms
-            } | to_nice_json }}
-        dest: "{{ [__snap_dir, 'cmd-wait-green-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
-        mode: "0640"
-      connection: local
-      delegate_to: localhost
-      become: false
-      loop: "{{ out.results | default([]) }}"
-      when: dirsrv_debug | bool
-    - name: Fail | Agreements did not reach healthy state
-      ansible.builtin.fail:
-        msg: "Agreements not healthy; see .ansible/artifacts/<run>/<host>/cmd-wait-green-*.json snapshots for details"
-  when: not (dirsrv_repl_use_modules | default(true) | bool)
-
-- name: Wait | Agreements healthy via module (feature-flagged)
+- name: Wait | Agreements healthy via module
   directories.ds.ds_repl_wait:
     instance: "{{ dirsrv_repl_this_node.instance }}"
     suffix: "{{ item }}"
@@ -116,4 +38,4 @@
     debug: "{{ dirsrv_debug | default(false) }}"
     log_every: "{{ 1 if (dirsrv_debug | default(false)) else 5 }}"
   loop: "{{ dirsrv_repl_suffixes }}"
-  when: (dirsrv_repl_use_modules | default(true) | bool)
+  when: dirsrv_repl_suffixes | length > 0

@@ -114,3 +114,51 @@
           | ternary(dirsrv_ldapi_socket_path,
                     '/var/run/dirsrv/slapd-' ~ (dirsrv_instance_effective) ~ '.socket') }}
   tags: [preflight]
+
+# DNS/TCP gating for replication targets (runs when replication topology data present)
+- name: Preflight | DNS resolution for replication targets
+  ansible.builtin.command:
+    argv:
+      - getent
+      - hosts
+      - "{{ dirsrv_repl_nodes[item.1.to].host }}"
+  register: __dirsrv_dns_checks
+  changed_when: false
+  failed_when: false
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
+    - value
+  when:
+    - dirsrv_repl_agreements is defined
+    - dirsrv_repl_agreements | length > 0
+    - dirsrv_repl_nodes is defined
+    - item.1.from == inventory_hostname
+  tags: [preflight]
+
+- name: Preflight | Assert DNS resolution succeeded
+  ansible.builtin.assert:
+    that:
+      - item.rc == 0
+    fail_msg: "DNS resolution failed for {{ dirsrv_repl_nodes[item.item.1.to].host }}; fix Podman DNS or environment"
+  loop: "{{ __dirsrv_dns_checks.results | default([]) }}"
+  when:
+    - __dirsrv_dns_checks is defined
+  tags: [preflight]
+
+- name: Preflight | TCP connectivity check to replication targets
+  vars:
+    target: "{{ dirsrv_repl_nodes[item.1.to] }}"
+  ansible.builtin.wait_for:
+    host: "{{ target.host }}"
+    port: "{{ target.port }}"
+    timeout: 5
+    sleep: 0
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
+    - value
+  when:
+    - dirsrv_repl_agreements is defined
+    - dirsrv_repl_agreements | length > 0
+    - dirsrv_repl_nodes is defined
+    - item.1.from == inventory_hostname
+  tags: [preflight]

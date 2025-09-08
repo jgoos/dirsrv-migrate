@@ -21,39 +21,10 @@
   when:
     - item.1.from == inventory_hostname
 
-- name: Preflight | Verify remote accepts manager bind (SIMPLE)
-  vars:
-    agree: "{{ item.1 }}"
-    target: "{{ dirsrv_repl_nodes[agree.to] }}"
-    _proto: "{{ target.protocol | lower }}"
-    _url: "{{ _proto }}://{{ target.host }}:{{ target.port }}"
-    max_tries: 60
-  ansible.builtin.command:
-    argv:
-      - ldapwhoami
-      - -x
-      - -D
-      - "{{ dirsrv_repl_auth.bind_dn }}"
-      - -w
-      - "{{ dirsrv_repl_auth.bind_password }}"
-      - -H
-      - "{{ _url }}"
-  register: dirsrv_repl_remote_bind
-  changed_when: false
-  failed_when: false
-  no_log: true
-  until: dirsrv_repl_remote_bind.rc == 0
-  retries: "{{ max_tries }}"
-  delay: 2
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_auth.method == 'SIMPLE'
+# Remote SIMPLE bind preflight moved under health_checks/preflight
 
-# Module-based path: ensure agreements without dsconf (feature-flagged)
-- name: Agreements | Ensure via module (feature-flagged)
+# Ensure agreements via module
+- name: Agreements | Ensure via module
   vars:
     suffix: "{{ item.0.key }}"
     agree: "{{ item.1 }}"
@@ -72,35 +43,8 @@
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
   when:
-    - dirsrv_repl_use_modules | bool
     - item.1.from == inventory_hostname
     - not ansible_check_mode
-
-- name: Agreements | List existing agreements for suffix
-  vars:
-    suffix: "{{ item.0.key }}"
-  ansible.builtin.command:
-    argv:
-      - dsconf
-      - -D
-      - "{{ dirsrv_dm_dn }}"
-      - -w
-      - "{{ dirsrv_password }}"
-      - "{{ dirsrv_repl_conn_url }}"
-      - repl-agmt
-      - list
-      - --suffix
-      - "{{ suffix }}"
-  register: dirsrv_repl_agmt_list
-  changed_when: false
-  failed_when: dirsrv_repl_agmt_list.rc != 0
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - not dirsrv_repl_use_modules | bool
 
 - name: Snapshot | Ensure local artifacts dir exists (controller)
   ansible.builtin.file:
@@ -139,51 +83,10 @@
   connection: local
   delegate_to: localhost
   become: false
-  loop: "{{ dirsrv_repl_agmt_list.results | default([]) }}"
-  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
+  loop: []
+  when: false
 
-- name: Agreements | Create agreement when missing
-  vars:
-    suffix: "{{ item.0.key }}"
-    agree: "{{ item.1 }}"
-    target: "{{ dirsrv_repl_nodes[agree.to] }}"
-    dirsrv_repl_agmt_cmd_base:
-      - dsconf
-      - -D
-      - "{{ dirsrv_dm_dn }}"
-      - -w
-      - "{{ dirsrv_password }}"
-      - "{{ dirsrv_repl_conn_url }}"
-      - repl-agmt
-      - create
-      - --suffix
-      - "{{ suffix }}"
-      - --host
-      - "{{ target.host }}"
-      - --port
-      - "{{ target.port | string }}"
-      - --conn-protocol
-      - "{{ target.protocol }}"
-    dirsrv_repl_agmt_cmd_bind: "{{ ['--bind-dn', dirsrv_repl_auth.bind_dn, '--bind-passwd', dirsrv_repl_auth.bind_password, '--bind-method', 'SIMPLE'] if dirsrv_repl_auth.method == 'SIMPLE' else ['--bind-method', 'SSLCLIENTAUTH'] }}"
-    # Stagger flow: create agreements first without --init; run init later, serially
-    dirsrv_repl_agmt_cmd_init: []
-  ansible.builtin.command:
-    argv: "{{ dirsrv_repl_agmt_cmd_base + dirsrv_repl_agmt_cmd_bind + dirsrv_repl_agmt_cmd_init + [agree.name] }}"
-  register: dirsrv_repl_agmt_create
-  changed_when: dirsrv_repl_agmt_create.rc == 0
-  failed_when: >-
-    dirsrv_repl_agmt_create.rc != 0 and (
-      'already exists' not in ((dirsrv_repl_agmt_create.stdout | lower | default('')) + ' ' + (dirsrv_repl_agmt_create.stderr | lower | default('')))
-    )
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - item.1.name not in (dirsrv_repl_agmt_list.stdout_lines | default([]))
-    - not ansible_check_mode
-    - not dirsrv_repl_use_modules | bool
+  # CLI agreement creation removed; using module path above
 
 - name: Snapshot | Agreement create command results (test-only)
   vars:
@@ -214,8 +117,8 @@
   connection: local
   delegate_to: localhost
   become: false
-  loop: "{{ dirsrv_repl_agmt_create.results | default([]) }}"
-  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
+  loop: []
+  when: false
 
 - name: Agreements | Warn if schedule configured with init=true (may pause)
   ansible.builtin.debug:
@@ -230,10 +133,23 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
 
+## Apply schedule via CLI until module supports it
 - name: Agreements | Apply schedule
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt set --suffix "{{ item.0.key }}" --schedule "{{ dirsrv_repl_schedule }}" {{ item.1.name }}
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - set
+      - --suffix
+      - "{{ item.0.key }}"
+      - --schedule
+      - "{{ dirsrv_repl_schedule }}"
+      - "{{ item.1.name }}"
   register: dirsrv_repl_agmt_sched
   changed_when: >-
     dirsrv_repl_agmt_sched.rc == 0 and (
@@ -248,7 +164,7 @@
   when:
     - item.1.from == inventory_hostname
     - dirsrv_repl_schedule | length > 0
-    - not dirsrv_repl_use_modules | bool
+    - not ansible_check_mode
 
 - name: Snapshot | Agreement schedule set results (test-only)
   vars:
@@ -279,15 +195,29 @@
   delegate_to: localhost
   become: false
   loop: "{{ dirsrv_repl_agmt_sched.results | default([]) }}"
-  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
+  when: dirsrv_debug | bool
 
+## Fractional/strip lists via CLI until module supports them
 - name: Agreements | Apply fractional/strip lists
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt set {{ item.1.name }} --suffix "{{ item.0.key }}"
-    {{ (dirsrv_repl_frac_list | length > 0) | ternary('--frac-list "' ~ (dirsrv_repl_frac_list | join(',')) ~ '"', '') }}
-    {{ (dirsrv_repl_frac_list_total | length > 0) | ternary('--frac-list-total "' ~ (dirsrv_repl_frac_list_total | join(',')) ~ '"', '') }}
-    {{ (dirsrv_repl_strip_list | length > 0) | ternary('--strip-list "' ~ (dirsrv_repl_strip_list | join(',')) ~ '"', '') }}
+  ansible.builtin.command:
+    argv:
+      - dsconf
+      - -D
+      - "{{ dirsrv_dm_dn }}"
+      - -w
+      - "{{ dirsrv_password }}"
+      - "{{ dirsrv_repl_conn_url }}"
+      - repl-agmt
+      - set
+      - "{{ item.1.name }}"
+      - --suffix
+      - "{{ item.0.key }}"
+      - "{{ '--frac-list' if dirsrv_repl_frac_list | length > 0 else omit }}"
+      - "{{ dirsrv_repl_frac_list | join(',') if dirsrv_repl_frac_list | length > 0 else omit }}"
+      - "{{ '--frac-list-total' if dirsrv_repl_frac_list_total | length > 0 else omit }}"
+      - "{{ dirsrv_repl_frac_list_total | join(',') if dirsrv_repl_frac_list_total | length > 0 else omit }}"
+      - "{{ '--strip-list' if dirsrv_repl_strip_list | length > 0 else omit }}"
+      - "{{ dirsrv_repl_strip_list | join(',') if dirsrv_repl_strip_list | length > 0 else omit }}"
   register: dirsrv_repl_agmt_frac
   changed_when: >-
     dirsrv_repl_agmt_frac.rc == 0 and (
@@ -302,31 +232,7 @@
   when:
     - item.1.from == inventory_hostname
     - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
-    - not dirsrv_repl_use_modules | bool
-
-- name: Agreements | Ensure bind credentials/method (SIMPLE)
-  vars:
-    suffix: "{{ item.0.key }}"
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt set {{ item.1.name }} --suffix "{{ suffix }}"
-    --bind-dn "{{ dirsrv_repl_auth.bind_dn }}" --bind-passwd "{{ dirsrv_repl_auth.bind_password }}" --bind-method SIMPLE
-  register: dirsrv_repl_agmt_bind
-  changed_when: >-
-    dirsrv_repl_agmt_bind.rc == 0 and (
-      'updated' in (dirsrv_repl_agmt_bind.stdout | lower | default('')) or
-      'modified' in (dirsrv_repl_agmt_bind.stdout | lower | default(''))
-    )
-  failed_when: dirsrv_repl_agmt_bind.rc != 0
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_auth.method == 'SIMPLE'
     - not ansible_check_mode
-    - not dirsrv_repl_use_modules | bool
 
 - name: Snapshot | Agreement fractional/strip set results (test-only)
   vars:
@@ -357,197 +263,21 @@
   delegate_to: localhost
   become: false
   loop: "{{ dirsrv_repl_agmt_frac.results | default([]) }}"
-  when: dirsrv_debug | bool and (not dirsrv_repl_use_modules | bool)
-
-- name: Agreements | Start online init
-  ansible.builtin.command:
-    argv:
-      - dsconf
-      - -D
-      - "{{ dirsrv_dm_dn }}"
-      - -w
-      - "{{ dirsrv_password }}"
-      - "{{ dirsrv_repl_conn_url }}"
-      - repl-agmt
-      - init
-      - --suffix
-      - "{{ item.0.key }}"
-      - "{{ item.1.name }}"
-  register: dirsrv_repl_init_start
-  changed_when: dirsrv_repl_init_start.rc == 0
-  failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  throttle: 1
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_init_mode == 'online'
-    - (item.1.init | default(false)) | bool
-    - not ansible_check_mode
-    - not (dirsrv_repl_is_secondary_supplier | default(false) | bool)
-
-- name: Agreements | Poll init-status to completion (online mode) - Adaptive retry
-  vars:
-    max_tries: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | int // dirsrv_repl_retry_settings.base_delay | int }}"
-    base_delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
-    backoff_multiplier: "{{ dirsrv_repl_retry_settings.backoff_multiplier | float }}"
-    max_delay: "{{ dirsrv_repl_retry_settings.max_delay | int }}"
-    current_delay: "{{ base_delay }}"
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
-  register: dirsrv_repl_init_status
-  changed_when: false
-  failed_when: >-
-    dirsrv_repl_init_status.rc != 0 and
-    'unknown' not in (dirsrv_repl_init_status.stdout | lower | default('')) and
-    'can\'t contact' not in (dirsrv_repl_init_status.stderr | lower | default('')) and
-    'timeout' not in (dirsrv_repl_init_status.stderr | lower | default('')) and
-    'temporary' not in (dirsrv_repl_init_status.stderr | lower | default(''))
-  until: >-
-    (dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized') or
-    (dirsrv_repl_init_status.stdout | lower | default('')) is search('already initialized')
-  retries: "{{ max_tries }}"
-  delay: "{{ current_delay }}"
-  throttle: 1
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_init_mode == 'online'
-    - (item.1.init | default(false)) | bool
-    - not ansible_check_mode
-    - not (dirsrv_repl_is_secondary_supplier | default(false) | bool)
-    - dirsrv_repl_nodes[item.1.from].role == 'supplier'
-
-- name: Agreements | Adaptive delay calculation for next retry
-  ansible.builtin.set_fact:
-    current_delay: "{{ [current_delay * backoff_multiplier, max_delay] | min }}"
-  when: 
-    - dirsrv_repl_init_status.rc != 0
-    - not ((dirsrv_repl_init_status.stdout | lower | default('')) is search('successfully initialized'))
-
-# Second phase: Initialize secondary suppliers after primary is ready
-- name: Agreements | Start online init (secondary suppliers)
-  ansible.builtin.command:
-    argv:
-      - dsconf
-      - -D
-      - "{{ dirsrv_dm_dn }}"
-      - -w
-      - "{{ dirsrv_password }}"
-      - "{{ dirsrv_repl_conn_url }}"
-      - repl-agmt
-      - init
-      - --suffix
-      - "{{ item.0.key }}"
-      - "{{ item.1.name }}"
-  register: dirsrv_repl_init_start_secondary
-  changed_when: dirsrv_repl_init_start_secondary.rc == 0
-  failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  throttle: 1
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_init_mode == 'online'
-    - (item.1.init | default(false)) | bool
-    - not ansible_check_mode
-    - (dirsrv_repl_is_secondary_supplier | default(false) | bool)
-
-- name: Agreements | Poll init-status to completion (secondary suppliers)
-  vars:
-    max_tries: 30
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
-  register: dirsrv_repl_init_status_secondary
-  changed_when: false
-  failed_when: dirsrv_repl_init_status_secondary.rc != 0
-  until: >-
-    (dirsrv_repl_init_status_secondary.stdout | lower | default('')) is search('successfully initialized')
-  retries: "{{ max_tries }}"
-  delay: 5
-  throttle: 1
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_init_mode == 'online'
-    - (item.1.init | default(false)) | bool
-    - not ansible_check_mode
-    - (dirsrv_repl_is_secondary_supplier | default(false) | bool)
-
-- name: Snapshot | Agreement init-status poll results (test-only)
-  vars:
-    res: "{{ item }}"
-    suffix: "{{ item.item.0.key }}"
-    agree: "{{ item.item.1.name }}"
-    __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
-    __raw_cmd: "{{ (res.cmd | default('')) | string }}"
-    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
-    __san_cmd: "{{ __san_cmd_1 | regex_replace('(?i)(--bind-passwd) +[^ ]+','--bind-passwd ****') }}"
-    __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
-    __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
-  ansible.builtin.copy:
-    content: |
-      {{ {
-          'host': inventory_hostname,
-          'step': 'agreement-init-status-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')),
-          'ts': (ansible_date_time.iso8601_micro | default("%Y-%m-%dT%H:%M:%SZ" | strftime)),
-          'argv_redacted': __san_cmd,
-          'rc': res.rc | default(-1),
-          'stdout_excerpt': (res.stdout | default(''))[:2048],
-          'stderr_excerpt': (res.stderr | default(''))[:2048],
-          'duration_ms': __dur_ms
-        } | to_nice_json }}
-    dest: "{{ [__snap_dir, 'cmd-agreement-init-status-' ~ (agree | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
-    mode: "0640"
-  connection: local
-  delegate_to: localhost
-  become: false
-  loop: "{{ dirsrv_repl_init_status.results | default([]) }}"
   when: dirsrv_debug | bool
 
-# Option B: targeted, single retry for transient init failures
-- name: Agreements | Retry online init once on transient/in-progress errors
-  ansible.builtin.include_tasks: retry_init.yml
-  vars:
-    retry_suffix: "{{ item.0.key }}"
-    retry_agmt: "{{ item.1.name }}"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_init_mode == 'online'
-    - (item.1.init | default(false)) | bool
-    - not ansible_check_mode
+  # Bind credential enforcement handled by module ensure step
 
-- name: Agreements | Force clean re-init (final)
-  ansible.builtin.command:
-    argv:
-      - dsconf
-      - -D
-      - "{{ dirsrv_dm_dn }}"
-      - -w
-      - "{{ dirsrv_password }}"
-      - "{{ dirsrv_repl_conn_url }}"
-      - repl-agmt
-      - init
-      - --suffix
-      - "{{ item.0.key }}"
-      - "{{ item.1.name }}"
-  register: dirsrv_repl_final_init
-  changed_when: dirsrv_repl_final_init.rc == 0
-  failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+### Online initialization using module
+- name: Agreements | Initialize agreements marked init=true (online)
+  vars:
+    suffix: "{{ item.0.key }}"
+    agree: "{{ item.1 }}"
+  directories.ds.ds_repl_init:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ suffix }}"
+    agreement: "{{ agree.name }}"
+    timeout: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | default(600) }}"
+    poll_interval: "{{ dirsrv_repl_retry_settings.base_delay | default(2) }}"
   throttle: 1
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
@@ -557,42 +287,7 @@
     - dirsrv_repl_init_mode == 'online'
     - (item.1.init | default(false)) | bool
     - not ansible_check_mode
-
-- name: Agreements | Poll init-status after final re-init
-  vars:
-    max_tries: "{{ dirsrv_repl_retry_settings.operation_timeouts.final_verification | int // dirsrv_repl_retry_settings.base_delay | int }}"
-  ansible.builtin.command: >-
-    dsconf -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
-    repl-agmt init-status --suffix "{{ item.0.key }}" {{ item.1.name }}
-  register: dirsrv_repl_final_status
-  changed_when: false
-  failed_when: >-
-    dirsrv_repl_final_status.rc != 0 and
-    'unknown' not in (dirsrv_repl_final_status.stdout | lower | default('')) and
-    'can\'t contact' not in (dirsrv_repl_final_status.stderr | lower | default('')) and
-    'timeout' not in (dirsrv_repl_final_status.stderr | lower | default('')) and
-    'temporary' not in (dirsrv_repl_final_status.stderr | lower | default(''))
-  until: >-
-    (dirsrv_repl_final_status.stdout | lower | default('')) is search('successfully initialized') or
-    (dirsrv_repl_final_status.stdout | lower | default('')) is search('already initialized')
-  retries: "{{ max_tries }}"
-  delay: "{{ dirsrv_repl_retry_settings.base_delay | int }}"
-  throttle: 1
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
-  when:
-    - item.1.from == inventory_hostname
-    - dirsrv_repl_init_mode == 'online'
-    - (item.1.init | default(false)) | bool
-    - not ansible_check_mode
-
-- name: Agreements | Include error recovery for failed operations
-  ansible.builtin.include_tasks: error_recovery.yml
-  when:
-    - dirsrv_repl_final_status.results is defined
-    - dirsrv_repl_final_status.results | selectattr('rc', 'not_equalto', 0) | list | length > 0
-    - not ansible_check_mode
+  # Polling is handled by ds_repl_init when wait=true; auxiliary retry/snapshot logic removed
 
 - name: Agreements | Final health verification
   ansible.builtin.include_tasks: monitoring.yml
