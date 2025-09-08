@@ -120,6 +120,12 @@ Tips
 - This repo prefers native `podman compose` for stability; `podman-compose` is used only as a fallback.
 - Collections are installed locally under `.ansible/collections` via `collections/requirements.yml`.
 
+## Replication Role Highlights (simplified)
+- Modules-only: replication agreements, init, wait, and info use `directories.ds` modules; no CLI fallbacks.
+- DNS/TCP preflight: environment must provide DNS; role fails fast instead of editing `/etc/hosts`.
+- Preconditions: suffixes must exist before enabling replication (created in migration/seed flows).
+- Orchestration: init is serialized (`serial: 1` recommended); no primary-supplier state machine.
+
 
 ## Key Variables (override as needed)
 - `dirsrv_instance`: Instance name (e.g., `dir`). Default: `dir`.
@@ -150,3 +156,8 @@ See full defaults in `roles/dirsrv_migrate/defaults/main.yml` and naming notes i
 - Follow the style in `AGENTS.md` (simplicity, clarity, idempotence).
 - Use Conventional Commits (e.g., `feat: add target import step`).
 - Validate with `--check`/`--diff`; include relevant logs or diffs in PRs.
+## Replication Role Highlights (simplified)
+- Modules-only: replication agreements, init, wait, and info use `directories.ds` modules; no CLI fallbacks.
+- DNS/TCP preflight: environment must provide DNS; role fails fast instead of editing `/etc/hosts`.
+- Preconditions: suffixes must exist before enabling replication (created in migration/seed flows).
+- Orchestration: init is serialized (`serial: 1` recommended); no primary-supplier state machine.
