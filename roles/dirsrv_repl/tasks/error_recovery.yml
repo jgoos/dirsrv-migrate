@@ -156,12 +156,12 @@
   block:
     - name: Error Recovery | Check LDAPI socket accessibility
       ansible.builtin.stat:
-        path: "{{ dirsrv_ldapi_socket_path | default(dirsrv_paths.run_dir + '/slapd-' + dirsrv_instance + '.socket') }}"
+        path: "{{ dirsrv_ldapi_socket_path | default(dirsrv_paths.run_dir + '/slapd-' + (dirsrv_instance | default('localhost')) + '.socket') }}"
       register: ldapi_socket_stat
 
     - name: Error Recovery | Try alternative LDAPI socket path
       ansible.builtin.set_fact:
-        alternative_ldapi_uri: "ldapi://%2Frun%2Fslapd-{{ dirsrv_instance }}.socket"
+        alternative_ldapi_uri: "ldapi://%2Frun%2Fslapd-{{ dirsrv_instance | default('localhost') }}.socket"
       when: not ldapi_socket_stat.stat.exists
 
     - name: Error Recovery | Update LDAPI URI if needed
