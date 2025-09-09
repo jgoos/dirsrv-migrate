@@ -315,7 +315,8 @@ def run_module():
             dsldap.build_ldapi_url(p['instance'], "/run"),
             dsldap.build_ldapi_url(p['instance'], "/data/run"),
         ]
-        import subprocess, json as _json
+        import subprocess
+        import json as _json
         for url in urls:
             try:
                 cp = subprocess.run(["dsconf", "-j", url, "replication", "monitor", "--suffix", p['suffix']], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
@@ -384,7 +385,6 @@ def run_module():
             # Success signals
             uc = o.get('update_code')
             us = (o.get('update_status') or '').lower()
-            is_success = (uc == 0 or ('succeed' in us) or ('acquired successfully' in us) or ('incremental update succeeded' in us))
             recent_ok = (uc == 0) and (age is not None and age >= 0 and age <= stale)
             busy = (o.get('busy') is True)
 

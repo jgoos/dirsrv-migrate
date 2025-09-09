@@ -344,19 +344,13 @@ def run_module():
         busy = None
         if isinstance(busy_raw, str):
             busy = busy_raw.strip().lower() in ('true', 'yes', 'on', '1')
-        # JSON status hints (if present)
+        # JSON init status hints (if present)
         init_json_raw = _first(_aget(a, 'nsds5replicaLastInitStatusJSON'))
-        upd_json_raw = _first(_aget(a, 'nsds5replicaLastUpdateStatusJSON'))
         init_json = None
-        upd_json = None
         try:
             init_json = json.loads(init_json_raw) if init_json_raw else None
         except Exception:
             init_json = None
-        try:
-            upd_json = json.loads(upd_json_raw) if upd_json_raw else None
-        except Exception:
-            upd_json = None
         # Derive init_status label
         init_status_label = None
         if isinstance(init_json, dict):
