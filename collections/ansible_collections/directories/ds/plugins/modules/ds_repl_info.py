@@ -63,6 +63,23 @@ options:
     description: Operation timeout seconds.
     type: int
     default: 30
+  agreements:
+    description: Optional list of agreement names or DNs to include (others filtered out).
+    type: list
+    elements: str
+    required: false
+  stale_seconds:
+    description: Consider last update stale if older than this many seconds when summarizing.
+    type: int
+    default: 120
+  monitor:
+    description: Best-effort sampling via `dsconf -j replication monitor` to collect backlog per agreement.
+    type: bool
+    default: true
+  monitor_timeout:
+    description: Timeout seconds for the monitor command.
+    type: int
+    default: 10
 '''
 
 EXAMPLES = r'''
@@ -101,11 +118,23 @@ agreements:
       last_update_code: 0
       last_update_end: "20250907091740Z"
       last_update_epoch: 1757246260
+summary:
+  description: High-level health indicators derived from latest snapshot.
+  returned: always
+  type: dict
+  sample:
+    configured: true
+    working: true
+    finished: false
+    problems: []
 '''
 
 from ansible.module_utils.basic import AnsibleModule
 import re
 from datetime import datetime, timezone
+import json
+import subprocess
+from typing import Any, Dict, Optional
 
 try:
     from ansible_collections.directories.ds.plugins.module_utils import dsldap
@@ -146,6 +175,17 @@ def _first(vals):
     return None
 
 
+def _aget(attrs, name):
+    """Case-insensitive attribute getter from parsed LDIF attrs dict."""
+    if not isinstance(attrs, dict):
+        return None
+    lname = name.lower()
+    for k, v in attrs.items():
+        if isinstance(k, str) and k.lower() == lname:
+            return v
+    return None
+
+
 def run_module():
     args_spec = dict(
         instance=dict(type='str', required=True),
@@ -161,6 +201,10 @@ def run_module():
         tls_client_key=dict(type='path', required=False),
         connect_timeout=dict(type='int', default=5),
         op_timeout=dict(type='int', default=30),
+        agreements=dict(type='list', elements='str', required=False),
+        stale_seconds=dict(type='int', default=120),
+        monitor=dict(type='bool', default=True),
+        monitor_timeout=dict(type='int', default=10),
     )
 
     module = AnsibleModule(argument_spec=args_spec, supports_check_mode=True)
@@ -202,43 +246,196 @@ def run_module():
 
     try:
         entries = client.search(replica_dn, 'one', '(objectClass=nsDS5ReplicationAgreement)', [
+            'cn',
             'nsds5ReplicaHost', 'nsds5ReplicaPort', 'nsds5ReplicaBindDN', 'nsds5ReplicaEnabled',
-            'nsds5replicaLastInitStatus', 'nsds5replicaLastInitEnd',
-            'nsds5replicaLastUpdateStatus', 'nsds5replicaLastUpdateEnd',
+            'nsds5replicaLastInitStatus', 'nsds5replicaLastInitEnd', 'nsds5replicaLastInitStatusJSON',
+            'nsds5replicaLastUpdateStatus', 'nsds5replicaLastUpdateStart', 'nsds5replicaLastUpdateEnd', 'nsds5replicaLastUpdateStatusJSON',
+            'nsds5ReplicaUpdateInProgress'
         ])
     except Exception:
         entries = []
 
+    # Optional filter by agreement names or DNs
+    filters = set(p.get('agreements') or [])
+
+    # Best-effort backlog sampling via dsconf -j replication monitor (LDAPI only unless bind provided)
+    def _dsconf_monitor() -> Optional[Dict[str, Any]]:
+        if not p.get('monitor'):
+            return None
+        argv = None
+        # Try LDAPI first using the instance socket; prefer /run then /data/run
+        try_urls = [
+            dsldap.build_ldapi_url(p['instance'], "/run"),
+            dsldap.build_ldapi_url(p['instance'], "/data/run"),
+        ]
+        for url in try_urls:
+            argv = ["dsconf", "-j", url, "replication", "monitor", "--suffix", p['suffix']]
+            try:
+                cp = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=int(p.get('monitor_timeout', 10)))
+                if cp.returncode == 0 and cp.stdout:
+                    return json.loads(cp.stdout)
+            except Exception:
+                continue
+        # Fallback to LDAPS if host + bind provided
+        if p.get('ldaps_host') and p.get('bind_dn') and p.get('bind_pw'):
+            url = f"ldaps://{p['ldaps_host']}:{p.get('ldaps_port', 636)}"
+            argv = ["dsconf", "-j", "-H", url, "ldap", "-D", p['bind_dn'], "-w", p['bind_pw'], "replication", "monitor", "--suffix", p['suffix']]
+            try:
+                cp = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=int(p.get('monitor_timeout', 10)))
+                if cp.returncode == 0 and cp.stdout:
+                    return json.loads(cp.stdout)
+            except Exception:
+                pass
+        return None
+
+    mon_json = _dsconf_monitor()
+
+    def _extract_backlogs(obj) -> Dict[str, int]:
+        out: Dict[str, int] = {}
+        def _walk(x):
+            if isinstance(x, dict):
+                nm = None
+                if 'name' in x and isinstance(x['name'], str):
+                    nm = x['name']
+                # any key containing 'backlog'
+                bl = None
+                for k, v in x.items():
+                    if isinstance(k, str) and 'backlog' in k.lower():
+                        try:
+                            bl = int(v)
+                        except Exception:
+                            pass
+                if nm and isinstance(bl, int):
+                    out[nm] = bl
+                for v in x.values():
+                    _walk(v)
+            elif isinstance(x, list):
+                for it in x:
+                    _walk(it)
+        _walk(obj)
+        return out
+
+    backlog_by_name: Dict[str, int] = _extract_backlogs(mon_json) if mon_json else {}
+
     agmts = []
     for e in entries:
         a = e.get('attrs', {})
-        init_status = _first(a.get('nsds5replicaLastInitStatus'))
-        upd_status = _first(a.get('nsds5replicaLastUpdateStatus'))
+        cn_val = _first(_aget(a, 'cn'))
+        dn_val = e.get('dn', '')
+        if filters:
+            # Accept match if CN matches any token or DN matches any token
+            matched = any(
+                (
+                    (cn_val and f"{f}".lower() in cn_val.lower()) or
+                    (dn_val and f"{f}".lower() in dn_val.lower())
+                ) for f in filters
+            )
+            if not matched:
+                continue
+        init_status = _first(_aget(a, 'nsds5replicaLastInitStatus'))
+        upd_status = _first(_aget(a, 'nsds5replicaLastUpdateStatus'))
         init_code = int(_CODE_RE.match(init_status).group(1)) if (isinstance(init_status, str) and _CODE_RE.match(init_status)) else None
         upd_code = int(_CODE_RE.match(upd_status).group(1)) if (isinstance(upd_status, str) and _CODE_RE.match(upd_status)) else None
-        init_end = _first(a.get('nsds5replicaLastInitEnd'))
-        upd_end = _first(a.get('nsds5replicaLastUpdateEnd'))
+        init_end = _first(_aget(a, 'nsds5replicaLastInitEnd'))
+        upd_end = _first(_aget(a, 'nsds5replicaLastUpdateEnd'))
+        upd_start = _first(_aget(a, 'nsds5replicaLastUpdateStart'))
+        # Busy flag (agreement-scoped)
+        busy_raw = _first(_aget(a, 'nsds5ReplicaUpdateInProgress'))
+        busy = None
+        if isinstance(busy_raw, str):
+            busy = busy_raw.strip().lower() in ('true', 'yes', 'on', '1')
+        # JSON status hints (if present)
+        init_json_raw = _first(_aget(a, 'nsds5replicaLastInitStatusJSON'))
+        upd_json_raw = _first(_aget(a, 'nsds5replicaLastUpdateStatusJSON'))
+        init_json = None
+        upd_json = None
+        try:
+            init_json = json.loads(init_json_raw) if init_json_raw else None
+        except Exception:
+            init_json = None
+        try:
+            upd_json = json.loads(upd_json_raw) if upd_json_raw else None
+        except Exception:
+            upd_json = None
+        # Derive init_status label
+        init_status_label = None
+        if isinstance(init_json, dict):
+            if isinstance(init_json.get('initialized'), bool):
+                init_status_label = 'Done' if init_json.get('initialized') else 'Unknown'
+            elif isinstance(init_json.get('state'), str):
+                # e.g., green/unknown
+                st = init_json.get('state').lower()
+                init_status_label = 'Done' if st in ('green', 'succeeded', 'success') else st.title()
+        if not init_status_label and isinstance(init_status, str):
+            if init_code == 0:
+                init_status_label = 'Done'
+            elif init_status:
+                init_status_label = 'Unknown'
+        # Agreement enabled status
         # Check agreement's own enabled status
         agmt_enabled = None
-        if 'nsds5ReplicaEnabled' in a:
-            agmt_enabled = (_first(a['nsds5ReplicaEnabled']) or '').lower() in ('on', 'true', 'yes', '1')
+        vals_en = _aget(a, 'nsds5ReplicaEnabled')
+        if vals_en is not None:
+            agmt_enabled = (_first(vals_en) or '').lower() in ('on', 'true', 'yes', '1')
         agmts.append(dict(
-            dn=e.get('dn', ''),
-            host=_first(a.get('nsds5ReplicaHost')),
-            port=(int(_first(a.get('nsds5ReplicaPort'))) if _first(a.get('nsds5ReplicaPort')) else None),
-            bind_dn=_first(a.get('nsds5ReplicaBindDN')),
+            dn=dn_val,
+            name=cn_val,
+            host=_first(_aget(a, 'nsds5ReplicaHost')),
+            port=(int(_first(_aget(a, 'nsds5ReplicaPort'))) if _first(_aget(a, 'nsds5ReplicaPort')) else None),
+            bind_dn=_first(_aget(a, 'nsds5ReplicaBindDN')),
             enabled=agmt_enabled,
+            busy=busy,
+            init_status=init_status_label,
             last_init_status=init_status,
             last_init_code=init_code,
             last_init_end=init_end,
             last_init_epoch=_gtz_to_epoch(init_end) if init_end else None,
             last_update_status=upd_status,
             last_update_code=upd_code,
+            last_update_start=upd_start,
+            last_update_start_epoch=_gtz_to_epoch(upd_start) if upd_start else None,
             last_update_end=upd_end,
             last_update_epoch=_gtz_to_epoch(upd_end) if upd_end else None,
+            backlog=(backlog_by_name.get(cn_val) if cn_val and cn_val in backlog_by_name else None),
         ))
 
-    module.exit_json(changed=False, replica=result_replica, agreements=agmts)
+    # Compute summary
+    problems = []
+    configured = any((a.get('enabled') is True) for a in agmts)
+    if not configured:
+        problems.append('No enabled agreements for suffix')
+    # Working: any busy, or any recent successful update
+    now = int(datetime.now(tz=timezone.utc).timestamp())
+    stale = int(p.get('stale_seconds') or 120)
+    recent_ok = any((
+        (a.get('last_update_code') == 0) and (a.get('last_update_epoch') is not None) and ((now - int(a['last_update_epoch'])) <= stale)
+    ) for a in agmts)
+    any_busy = any((a.get('busy') is True) for a in agmts)
+    working = any_busy or recent_ok
+    if not working and agmts:
+        # Provide hints per agreement
+        for a in agmts:
+            if a.get('last_update_code') not in (None, 0):
+                problems.append(f"{(a.get('name') or a.get('dn','(agmt)')).split(',')[0]}: update failed (code {a.get('last_update_code')})")
+            elif a.get('last_update_epoch') is None:
+                problems.append(f"{(a.get('name') or a.get('dn','(agmt)')).split(',')[0]}: no update timestamp observed")
+            else:
+                age = now - int(a['last_update_epoch'])
+                if age > stale:
+                    problems.append(f"{(a.get('name') or a.get('dn','(agmt)')).split(',')[0]}: last update stale >{stale}s")
+    # Finished: no busy, successful init (if observed), and recent_ok for all
+    none_busy = all(((a.get('busy') is False) or (a.get('busy') is None)) for a in agmts) if agmts else False
+    init_ok = all((a.get('last_init_code') in (None, 0) or (a.get('init_status') in ('Done', 'Completed'))) for a in agmts) if agmts else False
+    all_recent_ok = all((
+        (a.get('last_update_code') == 0) and (a.get('last_update_epoch') is not None) and ((now - int(a['last_update_epoch'])) <= stale)
+    ) for a in agmts) if agmts else False
+    # If backlog is exposed, also require 0 backlog across agreements (only for those with a value)
+    backlog_ok = all(((a.get('backlog') is None) or (int(a.get('backlog')) == 0)) for a in agmts) if agmts else False
+    finished = bool(none_busy and init_ok and all_recent_ok and backlog_ok)
+
+    summary = dict(configured=bool(configured), working=bool(working), finished=bool(finished), problems=sorted(set(problems)))
+
+    module.exit_json(changed=False, replica=result_replica, agreements=agmts, summary=summary)
 
 
 if __name__ == '__main__':
