@@ -116,9 +116,17 @@
   tags: [preflight]
 
 # DNS/TCP gating for replication targets (runs when replication topology data present)
-- name: Preflight | Collect unique replication target hosts
   ansible.builtin.set_fact:
-    __dirsrv_unique_targets: "{{ (dirsrv_repl_agreements | default({}) | dict2items | map(attribute='value') | selectattr('from', 'equalto', inventory_hostname) | map(attribute='to') | unique | list) }}"
+    __dirsrv_unique_targets: "{{ (
+        dirsrv_repl_agreements | default({})
+        | dict2items
+        | map(attribute='value')
+        | flatten
+        | selectattr('from', 'equalto', inventory_hostname)
+        | map(attribute='to')
+        | unique
+        | list
+      ) }}"
   when:
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
@@ -146,7 +154,7 @@
   ansible.builtin.assert:
     that:
       - item.rc == 0
-    fail_msg: "DNS resolution failed for {{ dirsrv_repl_nodes[item.item.1.to].host }}; fix Podman DNS or environment"
+    fail_msg: "DNS resolution failed for {{ dirsrv_repl_nodes[item.item].host }}; fix Podman DNS or environment"
   loop: "{{ (__dirsrv_dns_checks.results | default([])) | selectattr('rc','defined') | list }}"
   when:
     - __dirsrv_dns_checks is defined
