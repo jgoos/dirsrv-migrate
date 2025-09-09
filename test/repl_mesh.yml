@@ -36,6 +36,33 @@
           ansible.builtin.fail:
             msg: "Local LDAP not responsive on {{ inventory_hostname }}:3389"
 
+- name: Ensure suffix/backends exist on all nodes (lab convenience)
+  hosts: all
+  gather_facts: false
+  vars:
+    _dm_dn: "{{ dirsrv_dm_dn | default('cn=Directory Manager') }}"
+  tasks:
+    - name: Ensure backend exists for {{ item }}
+      ansible.builtin.command:
+        argv:
+          - dsconf
+          - "{{ dirsrv_instance | default('localhost') }}"
+          - backend
+          - create
+          - --suffix
+          - "{{ item }}"
+          - --be-name
+          - userRoot
+      register: be_create
+      changed_when: be_create.rc == 0
+      failed_when: >-
+        be_create.rc != 0 and (
+          'already exists' not in ((be_create.stdout | lower | default('')) + ' ' + (be_create.stderr | lower | default('')))
+        ) and (
+          'mapping tree for this suffix exists' not in ((be_create.stdout | lower | default('')) + ' ' + (be_create.stderr | lower | default('')))
+        )
+      loop: "{{ dirsrv_repl_suffixes }}"
+
 - name: Configure mesh replication (2 suppliers, 2 consumers)
   hosts: all
   gather_facts: false

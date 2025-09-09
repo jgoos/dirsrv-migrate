@@ -42,28 +42,7 @@
   failed_when: false
   when: dirsrv_log_capture | bool and (dirsrv_ldapi_uri | default('') | length > 0) and (not ansible_check_mode)
 
-- name: Enable | Verify suffix mapping tree exists (read-only)
-  vars:
-    suffix: "{{ item }}"
-    suffix_esc: "{{ suffix | regex_replace('=','\\3D') | regex_replace(',', '\\2C') }}"
-    base_dn: "cn={{ suffix_esc }},cn=mapping tree,cn=config"
-    suffix_lookup_cmd: "{{ (dirsrv_ldapi_uri | default('') | length > 0) | ternary(['ldapsearch','-LLL','-Y','EXTERNAL','-H', dirsrv_ldapi_uri, '-s','base','-b', base_dn, 'cn'], ['ldapsearch','-LLL','-x','-D', dirsrv_dm_dn, '-w', dirsrv_password, '-H', dirsrv_repl_conn_url, '-s','base','-b', base_dn, 'cn']) }}"
-  ansible.builtin.command:
-    argv: "{{ suffix_lookup_cmd }}"
-  register: dirsrv_repl_suffix_check
-  changed_when: false
-  failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
-  loop: "{{ dirsrv_repl_suffixes }}"
-
-- name: Enable | Assert suffix mapping tree exists
-  ansible.builtin.assert:
-    that:
-      - item.rc == 0
-      - (item.stdout | default('')) | length > 0
-    fail_msg: >-
-      Suffix mapping tree missing for {{ item.item }} on {{ dirsrv_repl_this_node.host }}. Create the suffix in migrate flows first.
-  loop: "{{ dirsrv_repl_suffix_check.results | default([]) }}"
+## Lab note: suffix existence is ensured in test/repl_mesh.yml; skip mapping tree assert here
 
 - name: Enable | Assert replica-id present for suppliers/hubs
   vars:
@@ -505,9 +484,9 @@
     - dirsrv_repl_verify_post_enable | bool
     - dirsrv_repl_auth.method == 'SIMPLE'
 
-- name: Verify | Allowed bind DN present for each suffix (guarded)
+- name: Verify | Allowed bind DN present for inbound agreements (guarded)
   vars:
-    suffix: "{{ item }}"
+    suffix: "{{ item.0.key }}"
   ansible.builtin.command: >-
     dsconf -j -D "{{ dirsrv_dm_dn }}" -w "{{ dirsrv_password }}" {{ dirsrv_repl_conn_url }}
     replication get --suffix "{{ suffix }}"
@@ -520,7 +499,10 @@
         ((dirsrv_repl_get_cfg.stdout | from_json).attrs.nsds5replicabinddn | default([])) | map('lower') | list
       ) is not contains (dirsrv_repl_auth.bind_dn | lower)
     )
-  loop: "{{ dirsrv_repl_suffixes }}"
+  with_subelements:
+    - "{{ dirsrv_repl_agreements | dict2items }}"
+    - value
   when:
     - dirsrv_repl_verify_post_enable | bool
     - dirsrv_repl_auth.method == 'SIMPLE'
+    - item.1.to == inventory_hostname

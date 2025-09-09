@@ -232,6 +232,7 @@
   when:
     - item.1.from == inventory_hostname
     - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
+    - dirsrv_repl_apply_fractional | default(false) | bool
     - not ansible_check_mode
 
 - name: Snapshot | Agreement fractional/strip set results (test-only)

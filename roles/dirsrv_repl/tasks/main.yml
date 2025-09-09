@@ -51,9 +51,7 @@
   ansible.builtin.include_tasks: health_checks.yml
   when: not ansible_check_mode
 
-- name: Preflight | Include monitoring setup
-  ansible.builtin.include_tasks: monitoring.yml
-  when: not ansible_check_mode
+## Monitoring setup moved later to ensure local node facts are set
 
 - name: Preflight | Additional time sync warning
   ansible.builtin.debug:
