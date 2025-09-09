@@ -116,23 +116,30 @@
   tags: [preflight]
 
 # DNS/TCP gating for replication targets (runs when replication topology data present)
-- name: Preflight | DNS resolution for replication targets
-  ansible.builtin.command:
-    argv:
-      - getent
-      - hosts
-      - "{{ dirsrv_repl_nodes[item.1.to].host }}"
-  register: __dirsrv_dns_checks
-  changed_when: false
-  failed_when: false
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
-    - value
+- name: Preflight | Collect unique replication target hosts
+  ansible.builtin.set_fact:
+    __dirsrv_unique_targets: "{{ (dirsrv_repl_agreements | default({}) | dict2items | map(attribute='value') | selectattr('from', 'equalto', inventory_hostname) | map(attribute='to') | unique | list) }}"
   when:
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
     - dirsrv_repl_nodes is defined
-    - item.1.from == inventory_hostname
+  tags: [preflight]
+
+- name: Preflight | DNS resolution for replication targets (optimized)
+  ansible.builtin.command:
+    argv:
+      - timeout
+      - "5"
+      - getent
+      - hosts
+      - "{{ dirsrv_repl_nodes[item].host }}"
+  register: __dirsrv_dns_checks
+  changed_when: false
+  failed_when: false
+  loop: "{{ __dirsrv_unique_targets | default([]) }}"
+  when:
+    - __dirsrv_unique_targets is defined
+    - __dirsrv_unique_targets | length > 0
   tags: [preflight]
 
 - name: Preflight | Assert DNS resolution succeeded
