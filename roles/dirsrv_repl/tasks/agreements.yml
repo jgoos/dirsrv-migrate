@@ -316,7 +316,7 @@
   ansible.builtin.set_fact:
     _dirsrv_init_groups: >-
       {{ (_dirsrv_init_groups | default({}))
-         | combine( { item.0.key: ((_dirsrv_init_groups[item.0.key] | default([])) + [ item.1 ]) }, recursive=True) }}
+         | combine({ item.0.key: (((_dirsrv_init_groups | default({})).get(item.0.key, [])) + [ item.1 ]) }, recursive=True) }}
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
