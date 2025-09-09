@@ -29,5 +29,7 @@
 - name: Monitoring | Summary
   ansible.builtin.debug:
     msg: >-
-      suffix={{ item.item }} enabled={{ item.replica.enabled | default(None) }} agmts={{ (item.agreements | map(attribute='host') | list) | default([]) }}
+      suffix={{ item.item }} enabled={{ item.replica.enabled | default(None) }}
+      agmts={{ (item.agreements | map(attribute='host') | list) | default([]) }}
+      summary={{ item.summary | default({}) }}
   loop: "{{ monitoring_repl_info.results | default([]) }}"
