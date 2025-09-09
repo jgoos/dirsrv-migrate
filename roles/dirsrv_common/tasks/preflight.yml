@@ -134,64 +134,200 @@
     - dirsrv_repl_nodes is defined
   tags: [preflight]
 
-- name: Preflight | DNS resolution for replication targets (optimized)
+- name: Preflight | Get authoritative container network information from Podman
   ansible.builtin.command:
     argv:
-      - timeout
-      - "5"
-      - getent
-      - hosts
-      - "{{ dirsrv_repl_nodes[item].host }}"
-  register: __dirsrv_dns_checks
+      - podman
+      - network
+      - inspect
+      - "{{ dirsrv_repl_network | default('dsnet') }}"
+      - --format
+      - json
+  register: __podman_network_info
   changed_when: false
-  failed_when: false
-  loop: "{{ __dirsrv_unique_targets | default([]) }}"
-  when:
-    - __dirsrv_unique_targets is defined
-    - __dirsrv_unique_targets | length > 0
-  tags: [preflight]
-
-- name: Preflight | Assert DNS resolution succeeded
-  ansible.builtin.assert:
-    that:
-      - item.rc == 0
-    fail_msg: "DNS resolution failed for {{ dirsrv_repl_nodes[item.item].host }}; fix Podman DNS or environment"
-  loop: "{{ (__dirsrv_dns_checks.results | default([])) | selectattr('rc','defined') | list }}"
-  when:
-    - __dirsrv_dns_checks is defined
-  tags: [preflight]
-
-- name: Preflight | TCP connectivity check to replication targets
-  vars:
-    target: "{{ dirsrv_repl_nodes[item.1.to] }}"
-  ansible.builtin.wait_for:
-    host: "{{ target.host }}"
-    port: "{{ target.port }}"
-    timeout: 20
-    sleep: 0
-  register: __dirsrv_tcp_check
-  changed_when: false
-  failed_when: false
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
-    - value
+  failed_when: __podman_network_info.rc != 0
   when:
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
-    - dirsrv_repl_nodes is defined
-    - item.1.from == inventory_hostname
-  tags: [preflight]
+  tags: [preflight, network_validation]
 
-- name: Preflight | Bind ping to replication targets (SIMPLE auth)
+- name: Preflight | Extract container IP mappings from Podman network
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json
+        import sys
+
+        try:
+            # Parse Podman network inspection output
+            network_data = json.loads('{{ __podman_network_info.stdout | to_json }}')
+            containers = network_data[0]['containers']
+
+            # Build mapping of container names to IPs
+            container_map = {}
+            for container_id, container_info in containers.items():
+                name = container_info['name']
+                # Extract IP from eth0 interface (remove /24 subnet mask)
+                ip_with_mask = container_info['interfaces']['eth0']['subnets'][0]['ipnet']
+                ip = ip_with_mask.split('/')[0]
+                container_map[name] = ip
+
+            # Output as JSON for Ansible
+            print(json.dumps(container_map))
+
+        except Exception as e:
+            print(f"Error parsing Podman network data: {e}", file=sys.stderr)
+            sys.exit(1)
+  register: __container_ip_extraction
+  changed_when: false
+  failed_when: __container_ip_extraction.rc != 0
+
+- name: Preflight | Set container network mapping fact
+  ansible.builtin.set_fact:
+    __container_network_map: "{{ __container_ip_extraction.stdout | from_json }}"
+  when:
+    - __container_ip_extraction is defined
+    - __container_ip_extraction.rc == 0
+    - __podman_network_info is defined
+    - __podman_network_info.rc == 0
+  tags: [preflight, network_validation]
+
+- name: Preflight | Validate replication targets against container network
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import socket
+        import sys
+        import json
+
+        hostname = '{{ dirsrv_repl_nodes[item].host }}'
+        expected_name = '{{ item }}'
+
+        # Get authoritative IP from Podman network inspection
+        container_map = {{ __container_network_map | to_json }}
+        authoritative_ip = container_map.get(expected_name)
+
+        if not authoritative_ip:
+            print(f"❌ Container '{expected_name}' not found in Podman network")
+            print(f"Available containers: {list(container_map.keys())}")
+            sys.exit(1)
+
+        print(f"🔍 Checking {hostname} (container: {expected_name})")
+        print(f"📋 Authoritative IP from Podman: {authoritative_ip}")
+
+        try:
+            # Test DNS resolution
+            resolved_ip = socket.gethostbyname(hostname)
+            print(f"🌐 DNS resolution: {hostname} -> {resolved_ip}")
+
+            # Validate against authoritative source
+            if resolved_ip != authoritative_ip:
+                print(f"🚨 IP MISMATCH DETECTED!")
+                print(f"   Podman network says: {authoritative_ip}")
+                print(f"   DNS resolves to:     {resolved_ip}")
+                print(f"   → This indicates /etc/hosts conflicts or DNS issues")
+                sys.exit(1)
+
+            print(f"✅ IP validation passed: {resolved_ip}")
+            sys.exit(0)
+
+        except socket.gaierror as e:
+            print(f"❌ DNS resolution failed: {hostname} - {e}")
+            print(f"💡 Check container DNS configuration or /etc/hosts conflicts")
+            sys.exit(1)
+        except Exception as e:
+            print(f"❌ Validation failed: {e}")
+            sys.exit(1)
+  register: __network_validation
+  changed_when: false
+  failed_when: __network_validation.rc != 0
+  loop: "{{ __dirsrv_unique_targets | default([]) }}"
+  when:
+    - __container_network_map is defined
+    - __dirsrv_unique_targets is defined
+    - __dirsrv_unique_targets | length > 0
+  tags: [preflight, network_validation]
+
+- name: Preflight | Quick /etc/hosts conflict check (fallback if Podman inspection fails)
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import socket
+        import sys
+
+        conflicts_found = []
+
+        try:
+            with open('/etc/hosts', 'r') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if line and not line.startswith('#'):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            hosts_ip = parts[0]
+                            hostnames = parts[1:]
+
+                            for hostname in hostnames:
+                                if hostname not in ['localhost', 'localhost.localdomain']:
+                                    try:
+                                        resolved_ip = socket.gethostbyname(hostname)
+                                        if resolved_ip != hosts_ip:
+                                            conflicts_found.append({
+                                                'hostname': hostname,
+                                                'hosts_ip': hosts_ip,
+                                                'resolved_ip': resolved_ip,
+                                                'line': line_num
+                                            })
+                                    except socket.gaierror:
+                                        # DNS resolution failed - this might be expected in some cases
+                                        pass
+
+        except Exception as e:
+            print(f"Warning: Could not check /etc/hosts: {e}")
+            sys.exit(0)
+
+        if conflicts_found:
+            print("🚨 CRITICAL: IP address conflicts detected in /etc/hosts!")
+            print("This will cause replication connectivity failures.")
+            print("")
+            for conflict in conflicts_found:
+                print(f"❌ Line {conflict['line']}: {conflict['hostname']}")
+                print(f"   /etc/hosts says: {conflict['hosts_ip']}")
+                print(f"   DNS resolves to: {conflict['resolved_ip']}")
+                print(f"   → FIX: Remove or correct the entry in /etc/hosts")
+                print("")
+            print("💡 This commonly happens with Podman's extra_hosts configuration")
+            print("   when hardcoded IPs don't match actual container IPs.")
+            sys.exit(1)
+        else:
+            print("✅ No IP address conflicts detected in /etc/hosts")
+            sys.exit(0)
+  register: hosts_conflict_check
+  changed_when: false
+  failed_when: hosts_conflict_check.rc != 0
+  when:
+    - dirsrv_repl_agreements is defined
+    - dirsrv_repl_agreements | length > 0
+    - __podman_network_info is failed or __podman_network_info.rc != 0
+  tags: [preflight, ip_validation]
+
+
+- name: Preflight | Bind ping to replication targets with native ldapsearch
   vars:
     agree: "{{ item.1 }}"
     target: "{{ dirsrv_repl_nodes[agree.to] }}"
     _proto: "{{ target.protocol | lower }}"
     _url: "{{ _proto }}://{{ target.host }}:{{ target.port }}"
-    _max_tries: 10
+    _max_tries: 5
   ansible.builtin.command:
     argv:
-      - ldapwhoami
+      - ldapsearch
       - -x
       - -D
       - "{{ dirsrv_repl_auth.bind_dn }}"
@@ -199,13 +335,21 @@
       - "{{ dirsrv_repl_auth.bind_password }}"
       - -H
       - "{{ _url }}"
+      - -s
+      - base
+      - -b
+      - ""
+      - -l
+      - "10"
+      - "(objectClass=*)"
+      - "1.1"
   register: __dirsrv_bind_ping
   changed_when: false
-  failed_when: false
+  failed_when: __dirsrv_bind_ping.rc != 0
   no_log: true
   until: __dirsrv_bind_ping.rc == 0
   retries: "{{ _max_tries }}"
-  delay: 2
+  delay: 3
   with_subelements:
     - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
     - value

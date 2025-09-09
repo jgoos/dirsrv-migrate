@@ -47,9 +47,109 @@
   ansible.builtin.debug:
     msg: "Time sync service not active (chronyd/ntpd/systemd-timesyncd). Replication CSNs require correct time."
 
+- name: Preflight | Validate container network configuration
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import socket
+        import sys
+        import os
+
+        # Check if we're running in a containerized environment
+        try:
+            with open('/proc/1/cgroup', 'r') as f:
+                if 'containerd' in f.read() or 'docker' in f.read() or 'podman' in f.read():
+                    print("✅ Running in containerized environment")
+
+                    # Validate network configuration
+                    hostname = socket.gethostname()
+                    try:
+                        local_ip = socket.gethostbyname(hostname)
+                        print(f"Local hostname resolution: {hostname} -> {local_ip}")
+
+                        # Check if IP is in expected range for container networks
+                        ip_parts = local_ip.split('.')
+                        if len(ip_parts) == 4:
+                            # Common container network ranges
+                            common_ranges = [
+                                ('172', '16-31'),  # Docker default bridge
+                                ('10', '0-255'),   # Common private networks
+                                ('192', '168'),    # Private networks
+                            ]
+
+                            subnet = ip_parts[0]
+                            if subnet in ['172', '10', '192']:
+                                print(f"✅ IP address {local_ip} is in expected container network range")
+                            else:
+                                print(f"⚠️ IP address {local_ip} is not in typical container network range")
+                        else:
+                            print(f"⚠️ Unexpected IP format: {local_ip}")
+
+                    except socket.gaierror as e:
+                        print(f"❌ Cannot resolve local hostname: {e}")
+                        sys.exit(1)
+
+                    # Check /etc/hosts for suspicious entries
+                    try:
+                        with open('/etc/hosts', 'r') as f:
+                            hosts_content = f.read()
+
+                        lines = hosts_content.split('\n')
+                        suspicious_lines = []
+                        for line in lines:
+                            line = line.strip()
+                            if line and not line.startswith('#'):
+                                parts = line.split()
+                                if len(parts) >= 2:
+                                    ip = parts[0]
+                                    hostnames = parts[1:]
+                                    # Check for hardcoded IPs that might conflict
+                                    if ip.startswith(('172.', '10.', '192.')):
+                                        # Look for hostnames that might have mismatched IPs
+                                        for hostname in hostnames:
+                                            try:
+                                                resolved_ip = socket.gethostbyname(hostname)
+                                                if resolved_ip != ip and hostname != 'localhost':
+                                                    suspicious_lines.append(f"{hostname}: hosts={ip}, resolved={resolved_ip}")
+                                            except:
+                                                pass
+
+                        if suspicious_lines:
+                            print("⚠️ Potential IP address conflicts detected in /etc/hosts:")
+                            for line in suspicious_lines:
+                                print(f"  - {line}")
+                            print("This may cause connectivity issues")
+                        else:
+                            print("✅ /etc/hosts configuration appears clean")
+
+                    except Exception as e:
+                        print(f"⚠️ Could not check /etc/hosts: {e}")
+
+                    sys.exit(0)
+                else:
+                    print("ℹ️ Not running in containerized environment, skipping network validation")
+                    sys.exit(0)
+        except:
+            print("ℹ️ Cannot determine environment, skipping network validation")
+            sys.exit(0)
+  register: network_validation
+  changed_when: false
+  failed_when: network_validation.rc != 0
+  when: not ansible_check_mode
+  tags: [preflight, network_validation]
+
 - name: Preflight | Include comprehensive health checks
   ansible.builtin.include_tasks: health_checks.yml
   when: not ansible_check_mode
+
+- name: Preflight | Include mesh connectivity health checks
+  ansible.builtin.include_tasks: mesh_health_checks.yml
+  when:
+    - not ansible_check_mode
+    - dirsrv_repl_nodes is defined
+    - (dirsrv_repl_nodes | length) > 1
 
 ## Monitoring setup moved later to ensure local node facts are set
 

@@ -1,0 +1,157 @@
+---
+# Advanced mesh connectivity health checks for replication
+
+- name: Mesh Health | Comprehensive connectivity validation
+  block:
+    - name: Mesh Health | Validate all replication nodes are reachable
+      vars:
+        target: "{{ dirsrv_repl_nodes[item] }}"
+      ansible.builtin.command:
+        argv:
+          - python3
+          - -c
+          - |
+            import socket
+            import sys
+            import time
+
+            hostname = '{{ target.host }}'
+            port = {{ target.port }}
+
+            try:
+                print(f"Testing connectivity to {hostname}:{port}")
+
+                # Test DNS resolution
+                start_time = time.time()
+                ip = socket.gethostbyname(hostname)
+                dns_time = time.time() - start_time
+                print(f"DNS resolution: {hostname} -> {ip} ({dns_time:.3f}s)")
+
+                # Test TCP connectivity with timeout
+                start_time = time.time()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(5)
+                result = sock.connect_ex((ip, port))
+                tcp_time = time.time() - start_time
+                sock.close()
+
+                if result == 0:
+                    print(f"TCP connection: SUCCESS ({tcp_time:.3f}s)")
+                    sys.exit(0)
+                else:
+                    print(f"TCP connection: FAILED ({tcp_time:.3f}s)")
+                    sys.exit(1)
+
+            except socket.gaierror as e:
+                print(f"DNS resolution failed: {hostname} - {e}")
+                sys.exit(1)
+            except socket.timeout:
+                print(f"TCP connection timeout: {hostname}:{port}")
+                sys.exit(1)
+            except Exception as e:
+                print(f"Connectivity test failed: {e}")
+                sys.exit(1)
+      register: __mesh_connectivity_test
+      changed_when: false
+      failed_when: __mesh_connectivity_test.rc != 0
+      loop: "{{ dirsrv_repl_nodes | dict2items | map(attribute='key') | list }}"
+      when: dirsrv_repl_nodes is defined
+
+    - name: Mesh Health | Test LDAP service availability with native ldapsearch
+      vars:
+        target: "{{ dirsrv_repl_nodes[item] }}"
+        ldap_url: "{{ target.protocol | lower }}://{{ target.host }}:{{ target.port }}"
+      ansible.builtin.command:
+        argv:
+          - ldapsearch
+          - -x
+          - -H
+          - "{{ ldap_url }}"
+          - -s
+          - base
+          - -b
+          - ""
+          - -l
+          - "5"
+          - "(objectClass=*)"
+          - "namingContexts"
+      register: __mesh_ldap_test
+      changed_when: false
+      failed_when: __mesh_ldap_test.rc != 0
+      loop: "{{ dirsrv_repl_nodes | dict2items | map(attribute='key') | list }}"
+      when: dirsrv_repl_nodes is defined
+
+    - name: Mesh Health | Validate replication agreements configuration
+      ansible.builtin.assert:
+        that:
+          - dirsrv_repl_agreements is defined
+          - dirsrv_repl_agreements | length > 0
+          - >-
+            {{ (dirsrv_repl_agreements | dict2items | map(attribute='value') | flatten | length) > 0 }}
+        fail_msg: "Replication agreements not properly configured for mesh topology"
+      when: dirsrv_repl_nodes is defined and (dirsrv_repl_nodes | length) > 1
+
+    - name: Mesh Health | Check for bidirectional agreements in mesh
+      vars:
+        agreements: "{{ dirsrv_repl_agreements | dict2items | map(attribute='value') | flatten }}"
+        node_pairs: >-
+          {{ agreements | map(attribute='from') | zip(agreements | map(attribute='to')) | list }}
+      ansible.builtin.assert:
+        that:
+          - >-
+            {{ node_pairs | selectattr('0', 'equalto', pair.1) | selectattr('1', 'equalto', pair.0) | length > 0 }}
+        fail_msg: "Missing bidirectional agreement: {{ pair.0 }} -> {{ pair.1 }} exists but {{ pair.1 }} -> {{ pair.0 }} is missing"
+      loop: "{{ node_pairs }}"
+      loop_control:
+        loop_var: pair
+      when:
+        - dirsrv_repl_agreements is defined
+        - (dirsrv_repl_agreements | length) > 0
+        - dirsrv_repl_require_bidirectional | default(true)
+
+    - name: Mesh Health | Validate replica IDs are unique across mesh
+      vars:
+        all_replica_ids: >-
+          {{ (dirsrv_repl_replica_ids | default({})) | dict2items | map(attribute='value') | dict2items | map(attribute='value') | list }}
+      ansible.builtin.assert:
+        that:
+          - all_replica_ids | unique | length == all_replica_ids | length
+        fail_msg: "Duplicate replica IDs found across mesh topology"
+      when:
+        - dirsrv_repl_replica_ids is defined
+        - dirsrv_repl_nodes is defined
+        - (dirsrv_repl_nodes | length) > 1
+
+  rescue:
+    - name: Mesh Health | Report connectivity issues and fail fast
+      vars:
+        connectivity_failures: "{{ __mesh_connectivity_test.results | selectattr('rc', '!=', 0) | map(attribute='stdout') | list if __mesh_connectivity_test is defined else [] }}"
+        ldap_failures: "{{ __mesh_ldap_test.results | selectattr('rc', '!=', 0) | map(attribute='stdout') | list if __mesh_ldap_test is defined else [] }}"
+      ansible.builtin.fail:
+        msg: |
+          🚨 CRITICAL: Mesh connectivity validation FAILED! Cannot proceed with replication setup.
+
+          Issues detected:
+          {% if connectivity_failures %}
+          🔌 Network connectivity failures:
+          {% for failure in connectivity_failures %}
+            - {{ failure }}
+          {% endfor %}
+          {% endif %}
+
+          {% if ldap_failures %}
+          🏥 LDAP service failures:
+          {% for failure in ldap_failures %}
+            - {{ failure }}
+          {% endfor %}
+          {% endif %}
+
+          🔧 Common causes:
+          - Incorrect IP addresses in container configuration
+          - DNS resolution issues
+          - Firewall blocking ports
+          - Services not running on target hosts
+
+          💡 Fix the above issues and re-run the playbook.
+
+  tags: [mesh_health, preflight]
