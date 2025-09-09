@@ -1,6 +1,11 @@
 ---
 # Lightweight monitoring using module-based introspection (no CLI fallbacks)
 
+- name: Monitoring | Ensure artifact root fact (fallback)
+  ansible.builtin.set_fact:
+    dirsrv_artifact_root_effective: "{{ [playbook_dir, '.ansible', 'artifacts'] | path_join }}"
+  when: dirsrv_artifact_root_effective is not defined
+
 - name: Monitoring | Gather replication info
   vars:
     suffix: "{{ item }}"

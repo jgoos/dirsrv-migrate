@@ -188,7 +188,7 @@ def _observations(client, replica_dn, agmt_dns):
             vals_en = _aget(a, 'nsds5ReplicaEnabled')
             agmt_enabled = None
             if vals_en is not None:
-                agmt_enabled = ((_first(vals_en) or '') or '').lower() in ('on','true','yes','1')
+                agmt_enabled = (_first(vals_en) or '').lower() in ('on','true','yes','1')
             init_status = _first(_aget(a, 'nsds5replicaLastInitStatus'))
             upd_status = _first(_aget(a, 'nsds5replicaLastUpdateStatus'))
             # Parse first integer anywhere in the status strings if present
@@ -237,6 +237,8 @@ def run_module():
         timeouts=dict(type='dict', options=dict(configured=dict(type='int', default=20), start=dict(type='int', default=30), done=dict(type='int', default=120))),
         backoff_after=dict(type='int', default=30),
         backoff_interval=dict(type='int', default=5),
+        monitor_enabled=dict(type='bool', default=True),
+        monitor_every=dict(type='int', default=3),
         use_ldapi=dict(type='bool', default=True),
         ldaps_host=dict(type='str'),
         ldaps_port=dict(type='int', default=636),

@@ -1,3 +1,8 @@
+- name: Monitor | Ensure artifact root fact (fallback)
+  ansible.builtin.set_fact:
+    dirsrv_artifact_root_effective: "{{ [playbook_dir, '.ansible', 'artifacts'] | path_join }}"
+  when: dirsrv_artifact_root_effective is not defined
+
 - name: Monitor | Collect replication info via module
   vars:
     suffix: "{{ item }}"

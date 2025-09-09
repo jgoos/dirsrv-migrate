@@ -45,11 +45,32 @@ rhds_disable_referrals: true
 dirsrv_repl_verify_post_enable: true
 
 # Tighter wait thresholds for fast lab runs
-rhds_repl_wait_stale_seconds: 60
+rhds_repl_wait_stale_seconds: 30
 rhds_repl_wait_steady_ok_polls: 2
-rhds_repl_wait_delay: 2
-rhds_repl_wait_timeout: 240
+rhds_repl_wait_delay: 1
+rhds_repl_wait_timeout: 120
 rhds_repl_wait_require_finished: true
-rhds_repl_wait_timeout_configured: 20
-rhds_repl_wait_timeout_start: 30
-rhds_repl_wait_timeout_done: 120
+rhds_repl_wait_timeout_configured: 10
+rhds_repl_wait_timeout_start: 15
+rhds_repl_wait_timeout_done: 60
+
+# Override retry settings for faster test execution
+dirsrv_repl_retry_settings:
+  max_retries: 10
+  base_delay: 1
+  max_delay: 30
+  backoff_multiplier: 1.5
+  jitter: false
+  circuit_breaker_threshold: 5
+  operation_timeouts:
+    ldapi_health_check: 30
+    remote_bind_check: 60
+    agreement_creation: 30
+    agreement_init: 120
+    init_status_poll: 180
+    final_verification: 60
+  mesh_settings:
+    supplier_steady_gate_delay: 5
+    secondary_supplier_delay: 10
+    agreement_serialization_delay: 2
+    changelog_verification_delay: 5

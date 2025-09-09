@@ -11,8 +11,8 @@
       register: tcp_probe
       changed_when: false
       until: tcp_probe.rc == 0
-      retries: 60
-      delay: 3
+      retries: 10
+      delay: 1
       loop: "{{ targets }}"
 
 - name: Preflight | Local LDAP readiness on all nodes
@@ -25,8 +25,8 @@
             argv: [ldapsearch, -x, -H, ldap://localhost:3389, -s, base, -b, '', 1.1]
           register: local_ldap
           changed_when: false
-          retries: 60
-          delay: 2
+          retries: 10
+          delay: 1
           until: local_ldap.rc == 0
       rescue:
         - name: Show local LDAP error
@@ -114,8 +114,8 @@
           - nsds5ReplicaUpdateInProgress
       register: s_sup
       changed_when: false
-      retries: 120
-      delay: 3
+      retries: 20
+      delay: 2
       until: >-
         (s_sup.stdout is search('"state"\s*:\s*"green"')) and not (s_sup.stdout | lower | default('')) is search('updateinprogress: true')
 
@@ -205,7 +205,7 @@
       failed_when: false
       until: >-
         (sc_status_after.stdout is search('"error"\s*:\s*0')) and not (sc_status_after.stdout | lower | default('')) is search('in progress')
-      retries: 30
+      retries: 10
       delay: 5
       loop: "{{ sc_status.results | default([]) }}"
       loop_control: { label: "{{ item.item.name }}" }
@@ -245,7 +245,7 @@
       changed_when: false
       failed_when: s2c2_init.rc != 0
       until: (s2c2_init.stdout | lower | default('')) is search('successfully initialized')
-      retries: 60
+      retries: 15
       delay: 3
 
     - name: Wait until s1->c1 agreement is initialized (delegate to ds-s1)
@@ -266,7 +266,7 @@
       changed_when: false
       failed_when: s1c1_init.rc != 0
       until: (s1c1_init.stdout | lower | default('')) is search('successfully initialized')
-      retries: 60
+      retries: 15
       delay: 3
       delegate_to: ds-s1
 
@@ -288,7 +288,7 @@
       changed_when: false
       failed_when: s2s1_init.rc != 0
       until: (s2s1_init.stdout | lower | default('')) is search('successfully initialized')
-      retries: 60
+      retries: 15
       delay: 3
 
     - name: Ensure test entry present on supplier ds-s2
@@ -334,7 +334,7 @@
       register: poke_s2_s1
       changed_when: false
       until: poke_s2_s1.rc == 0
-      retries: 120
+      retries: 20
       delay: 3
 
     - name: Nudge replication s2->c2 after add
@@ -354,7 +354,7 @@
       register: poke_s2_c2
       changed_when: false
       until: poke_s2_c2.rc == 0
-      retries: 120
+      retries: 20
       delay: 3
 
     - name: Nudge replication s1->c1 after add (delegate to ds-s1)
@@ -374,7 +374,7 @@
       register: poke_s1_c1
       changed_when: false
       until: poke_s1_c1.rc == 0
-      retries: 120
+      retries: 20
       delay: 3
       delegate_to: ds-s1
 
@@ -406,7 +406,7 @@
               - objectClass=*
           register: search
           changed_when: false
-          retries: 120
+          retries: 20
           delay: 3
           until: search.rc == 0
           when: inventory_hostname in ['ds-s1','ds-c1','ds-c2']

@@ -334,8 +334,10 @@ def run_module():
                 continue
         init_status = _first(_aget(a, 'nsds5replicaLastInitStatus'))
         upd_status = _first(_aget(a, 'nsds5replicaLastUpdateStatus'))
-        init_code = int(_CODE_RE.match(init_status).group(1)) if (isinstance(init_status, str) and _CODE_RE.match(init_status)) else None
-        upd_code = int(_CODE_RE.match(upd_status).group(1)) if (isinstance(upd_status, str) and _CODE_RE.match(upd_status)) else None
+        init_match = _CODE_RE.match(init_status) if isinstance(init_status, str) else None
+        upd_match = _CODE_RE.match(upd_status) if isinstance(upd_status, str) else None
+        init_code = int(init_match.group(1)) if init_match else None
+        upd_code = int(upd_match.group(1)) if upd_match else None
         init_end = _first(_aget(a, 'nsds5replicaLastInitEnd'))
         upd_end = _first(_aget(a, 'nsds5replicaLastUpdateEnd'))
         upd_start = _first(_aget(a, 'nsds5replicaLastUpdateStart'))
