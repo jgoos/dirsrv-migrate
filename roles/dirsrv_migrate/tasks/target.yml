@@ -108,8 +108,20 @@
   ansible.builtin.systemd:
     name: "dirsrv@{{ dirsrv_instance }}"
     state: restarted
-  when: dirsrv_manage_service | bool and not ansible_check_mode
+  when:
+    - dirsrv_manage_service | bool
+    - not ansible_check_mode
+    - not dirsrv_no_restart | bool
   tags: [import]
+
+- name: Import | No-restart policy active, restart skipped (INT)
+  ansible.builtin.debug:
+    msg: "INT policy: restart skipped due to dirsrv_no_restart=true (post-import)."
+    warn: true
+  when:
+    - dirsrv_manage_service | bool
+    - not ansible_check_mode
+    - dirsrv_no_restart | bool
 
 - name: Import via dsconf using --suffix (preferred)
   ansible.builtin.command:

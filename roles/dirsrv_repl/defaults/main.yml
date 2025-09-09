@@ -116,7 +116,6 @@ dirsrv_network:
     s2: "10.89.1.8"
     c1: "10.89.1.4"
     c2: "10.89.1.5"
-rhds_disable_referrals: false
 
 # Test-only observability switches (default off)
 # Enable with: -e dirsrv_debug=true -e dirsrv_log_capture=true
@@ -135,3 +134,57 @@ dirsrv_artifact_root_effective: >-
 dirsrv_repl_verify_post_enable: false
 
 # Use native modules for agreements/wait instead of dsconf/ldapsearch
+
+# Environment and lifecycle defaults
+# env_type: dev|int (integration). INT forbids restarts per AGENTS.md.
+env_type: dev
+dirsrv_no_restart: "{{ env_type == 'int' }}"
+
+# Target type inference (container vs vm) used for addressing policy
+dirsrv_target_type: >-
+  {{
+    'container'
+      if (ansible_connection | default('ssh')) in [
+        'containers.podman.podman', 'community.docker.docker', 'podman', 'docker'
+      ] else 'vm'
+  }}
+
+# Canonical advertised hostname (only name used in agreements/LDAP URLs)
+# Resolution rule:
+# 1) dirsrv_advertised_hostname if defined
+# 2) if container → inventory_hostname (service name)
+# 3) else → ansible_fqdn | default(inventory_hostname)
+dirsrv_advertised_hostname_final: >-
+  {{
+    dirsrv_advertised_hostname
+      | default(
+          (inventory_hostname)
+            if (dirsrv_target_type | default('container')) == 'container'
+            else (ansible_fqdn | default(inventory_hostname))
+        )
+  }}
+
+# Referral handling (lab-only convenience) — standardized var name
+dirsrv_repl_disable_referrals: false
+
+# Replication wait/gating defaults (tuned by environment)
+# INT: tighter SLAs to fail fast; DEV: more relaxed for iteration
+dirsrv_repl_wait_stale_seconds: >-
+  {{ 30 if (env_type | default('dev')) == 'int' else 300 }}
+dirsrv_repl_wait_steady_ok_polls: >-
+  {{ 2 if (env_type | default('dev')) == 'int' else 3 }}
+dirsrv_repl_wait_delay: >-
+  {{ 1 if (env_type | default('dev')) == 'int' else 3 }}
+dirsrv_repl_wait_timeout: >-
+  {{ 240 if (env_type | default('dev')) == 'int' else 900 }}
+dirsrv_repl_wait_require_finished: >-
+  {{ true if (env_type | default('dev')) == 'int' else false }}
+dirsrv_repl_wait_timeout_configured: >-
+  {{ 10 if (env_type | default('dev')) == 'int' else 20 }}
+dirsrv_repl_wait_timeout_start: >-
+  {{ 20 if (env_type | default('dev')) == 'int' else 30 }}
+dirsrv_repl_wait_timeout_done: >-
+  {{ 120 if (env_type | default('dev')) == 'int' else 180 }}
+
+# DNS resolution enforcement for agreement targets
+dirsrv_require_dns_resolution: true

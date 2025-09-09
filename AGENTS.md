@@ -11,6 +11,46 @@
 - Optimize for idempotence and clarity: set `changed_when`/`failed_when` where helpful.
 - Document intent briefly in task names; keep comments short and practical.
 
+## Environment Matrix & Project Structure
+
+### Environment Matrix
+We support two distinct environments with different characteristics:
+
+| Dimension | DEV (persistent) | INT (ephemeral) | VMs |
+|-----------|----------------|-----------------|-----|
+| Storage | Bind mounts (config/db/logs/certs) | Tmpfs/anon volumes (no bind mounts) | Local FS under /etc/dirsrv, /var/lib/dirsrv |
+| Lifecycle | Start/stop/restart allowed | No restarts allowed; full teardown if needed | Start/stop/restart allowed (systemd) |
+| Data seeding | Optional; incremental | Deterministic, clean every run | Deterministic |
+| Image pinning | Tag-based (for iteration) | Immutable digest | Installed RPMs |
+| Logging | Persist on host | Export artifacts before teardown | Local logs, copy summaries |
+| DNS policy | Service names only | Service names only | FQDNs only |
+
+### Container Lifecycle Contracts
+- **DEV**: restarts allowed.
+- **INT**: restarts forbidden after seeding begins; if restart required, tear down and rebuild.
+- Enforced by role var: `dirsrv_no_restart: "{{ env_type == 'int' }}"`
+
+### Deterministic Seeding (INT & VMs)
+- Start from clean slate.
+- Seed LDIF, schema, and indexes via idempotent tasks.
+- Sequence:
+  1. Base suffix creation
+  2. Required indexes/schema changes
+  3. Test entries load
+- Fail fast on divergence.
+
+### Naming & Addressing
+- **Containers**: always use Compose service names (ds-s1, ds-s2, …).
+- **VMs**: always use FQDN (e.g., rhds-a1.example.com).
+- **Variable**: `dirsrv_advertised_hostname_final = the only name ever used in agreements or LDAP URLs`.
+
+**Resolution rule (priority order):**
+1. `dirsrv_advertised_hostname` if defined
+2. If `dirsrv_target_type == container` → `inventory_hostname` (service name)
+3. Else → `ansible_fqdn` | default(`inventory_hostname`)
+
+🚫 **No IP literals. No mixing service names and FQDNs.**
+
 ## Project Structure & Module Organization
 - `site.yml`: Primary playbook orchestrating the overall workflow.
 - `inventory.yml`: Hosts grouped into source/target groups (e.g., `dirsrv_source`/`dirsrv_target`) for migration; lab inventories live under `inventories/`.
@@ -77,6 +117,33 @@
 - Container lab hardening: avoid exposing host ports when not needed; prefer LDAPI for local admin operations. Force-remove stale containers before up/down on macOS Podman.
 - Supply chain: prefer versioned image tags or digests for reproducibility in compose files.
 
+### Security & Secrets
+- No secrets in git.
+- Provide via .env, Podman secrets, or Ansible vault.
+- Required:
+  - DS_DM_PASSWORD
+  - Any test bind DN passwords
+
+### Image & Packages
+- DEV: pin to stable tag.
+- INT: pin by immutable digest (quay.io/389ds/dirsrv@sha256:...).
+- VMs: install RHDS/389-ds-base via RPM.
+
+### Time & Sync
+- Max clock skew: ≤ 2s across nodes.
+- NTP must be enabled on Podman VM and VMs.
+
+### Firewalld & SELinux (VMs only)
+- Open ports 389, 636.
+- Verify SELinux contexts/booleans for RHDS defaults.
+
+### Timeouts (defaults)
+- LDAPI readiness (local): ≤ 20s
+- TCP readiness: ≤ 15s per peer
+- Initial replication init per agreement: ≤ 120s
+- Mesh convergence (4-node): ≤ 4m
+- Entire INT job: ≤ 10m
+
 ## Ansible Best Practices (additions)
 - Idempotence: always set `changed_when`/`failed_when` on command/shell tasks to prevent false positives and to surface real failures.
 - Check mode: destructive operations should respect `ansible_check_mode`; skip when appropriate and explain what would change.
@@ -87,6 +154,36 @@
 - Protect `main`: require PR reviews and passing checks. Disallow force pushes and direct pushes.
 - Use feature branches per change; keep PRs focused and scoped.
 
+
+### Readiness & Preflight Gates
+
+**Sequence:**
+1. DNS resolution (getent hosts {{ peer }})
+2. TCP handshake (nc -vz {{ peer }} 389/636)
+3. Base search over TCP LDAP (ldapsearch -x -H ldap://{{ peer }}:389)
+
+**LDAPI socket:**
+- Containers: /data/run/slapd-localhost.socket
+- VMs: /run/slapd-localhost.socket
+
+### Replication Setup
+- Agreements use `dirsrv_advertised_hostname_final` only.
+- Replica ID policy:
+  - Suppliers get fixed IDs (1..N).
+  - Consumers use 65535.
+- Verification:
+  - Agreement present in dsconf list
+  - Monitor reports green
+  - RUV present, change count increasing
+
+### Observability & Artifacts
+- Logs: errors, access, audit.
+- Replication status: agreements, RUV per suffix.
+- namingContexts, listener sockets, Ansible timings, sanitized vars snapshot.
+
+**DEV**: logs persist in bind mounts.
+**INT**: export all artifacts to .ansible/artifacts/<run-id>/... before teardown.
+**VMs**: leave logs on host; copy summaries.
 
 ## Lab Topology & Ports (from DESIGN)
 - Containers: upstream 389-DS images under Podman on macOS.
@@ -138,6 +235,15 @@
   - `dsconf -D "cn=Directory Manager" -w $PW ldap://localhost:3389 replication set --suffix dc=example,dc=com --repl-add-bind-dn "<bind DN>"`.
 - Final clean re-init:
   - `dsconf -D "cn=Directory Manager" -w $PW ldap://localhost:3389 repl-agmt init --suffix dc=example,dc=com <agmt-name>` then poll `init-status`.
+
+### Acceptance Criteria
+- Same Ansible role works for containers and VMs; only inventory/group vars differ.
+- Agreements always use canonical advertised hostname.
+- INT fails if:
+  - restart occurs,
+  - preflight gates fail, or
+  - convergence exceeds SLA.
+- Artifacts are exported (INT) or persisted (DEV/VM).
 
 ## Contribution Notes (agent focus)
 - Prefer `argv` with `ansible.builtin.command`; keep `no_log: true` where secrets might appear.

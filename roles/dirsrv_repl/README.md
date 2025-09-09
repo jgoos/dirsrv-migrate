@@ -23,11 +23,11 @@ Makefile targets (local lab)
 
 Example Inventory (group‑driven)
 ```
-[rhds_suppliers]
+[dirsrv_suppliers]
 ds-s1 instance=slapd-prod host=ldap1.example.com port=636 protocol=LDAPS
 ds-s2 instance=slapd-prod host=ldap2.example.com port=636 protocol=LDAPS
 
-[rhds_consumers]
+[dirsrv_consumers]
 ds-c1 instance=slapd-prod host=replica01.example.com port=636 protocol=LDAPS
 ```
 

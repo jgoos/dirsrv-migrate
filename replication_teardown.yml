@@ -9,4 +9,3 @@
   roles:
     - role: dirsrv_repl
       tasks_from: teardown.yml
-

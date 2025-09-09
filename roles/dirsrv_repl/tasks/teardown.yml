@@ -18,10 +18,22 @@
     suffix: "{{ item.0.key }}"
     agree: "{{ item.1 }}"
     target: "{{ dirsrv_repl_nodes[agree.to] }}"
+    target_host_canonical: >-
+      {{
+        hostvars[agree.to].dirsrv_advertised_hostname_final
+          | default(
+              hostvars[agree.to].dirsrv_advertised_hostname
+                | default(
+                    (agree.to)
+                      if (hostvars[agree.to].dirsrv_target_type | default('container')) == 'container'
+                      else (hostvars[agree.to].ansible_fqdn | default(agree.to))
+                )
+            )
+      }}
   directories.ds.ds_repl_agreement:
     instance: "{{ dirsrv_repl_this_node.instance }}"
     suffix: "{{ suffix }}"
-    consumer_host: "{{ target.host }}"
+    consumer_host: "{{ target_host_canonical }}"
     consumer_port: "{{ target.port }}"
     name: "{{ agree.name }}"
     transport: "{{ target.protocol }}"
@@ -46,9 +58,8 @@
       'modified' in (dirsrv_repl_disable.stdout | lower | default(''))
     )
   failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
     - dirsrv_repl_disable_after_teardown | default(false) | bool
     - not ansible_check_mode
-

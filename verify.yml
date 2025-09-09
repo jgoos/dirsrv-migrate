@@ -11,4 +11,3 @@
       register: nc
       changed_when: false
       failed_when: nc.rc != 0
-

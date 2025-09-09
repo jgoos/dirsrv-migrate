@@ -85,3 +85,7 @@ dirsrv_host_map: {}
 # Historical compatibility for dsctl var name (not used by this role)
 # Kept for parity with older docs; safe to remove in a future major.
 dirsrv_dsctl_bin: "/sbin/dsctl"  # deprecated, unused
+
+# Lifecycle policy (INT forbids restarts)
+env_type: dev
+dirsrv_no_restart: "{{ env_type == 'int' }}"

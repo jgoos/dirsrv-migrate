@@ -142,4 +142,15 @@
           (tls_add_srv is defined and tls_add_srv is changed) or
           (tls_sec_port is defined and tls_sec_port is changed) or
           (tls_set_nick is defined and tls_set_nick is changed)
+        - not dirsrv_no_restart | bool
 
+    - name: TLS | No-restart policy active, restart skipped (INT)
+      ansible.builtin.debug:
+        msg: "INT policy: restart skipped due to dirsrv_no_restart=true (changes pending)."
+        warn: true
+      when:
+        - ((tls_add_ca is defined and tls_add_ca is changed) or
+           (tls_add_srv is defined and tls_add_srv is changed) or
+           (tls_sec_port is defined and tls_sec_port is changed) or
+           (tls_set_nick is defined and tls_set_nick is changed))
+        - dirsrv_no_restart | bool

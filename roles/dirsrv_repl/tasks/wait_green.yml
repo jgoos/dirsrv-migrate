@@ -31,18 +31,18 @@
     instance: "{{ dirsrv_repl_this_node.instance }}"
     suffix: "{{ item }}"
     all: true
-    stale_seconds: "{{ rhds_repl_wait_stale_seconds | default(300) }}"
-    steady_ok_polls: "{{ rhds_repl_wait_steady_ok_polls | default(3) }}"
-    poll_interval: "{{ rhds_repl_wait_delay | default(3) }}"
-    timeout: "{{ rhds_repl_wait_timeout | default(900) }}"
+    stale_seconds: "{{ dirsrv_repl_wait_stale_seconds | default(300) }}"
+    steady_ok_polls: "{{ dirsrv_repl_wait_steady_ok_polls | default(3) }}"
+    poll_interval: "{{ dirsrv_repl_wait_delay | default(3) }}"
+    timeout: "{{ dirsrv_repl_wait_timeout | default(900) }}"
     require:
       configured: true
       working: true
-      finished: "{{ rhds_repl_wait_require_finished | default(false) }}"
+      finished: "{{ dirsrv_repl_wait_require_finished | default(false) }}"
     timeouts:
-      configured: "{{ rhds_repl_wait_timeout_configured | default(20) }}"
-      start: "{{ rhds_repl_wait_timeout_start | default(30) }}"
-      done: "{{ rhds_repl_wait_timeout_done | default(120) }}"
+      configured: "{{ dirsrv_repl_wait_timeout_configured | default(20) }}"
+      start: "{{ dirsrv_repl_wait_timeout_start | default(30) }}"
+      done: "{{ dirsrv_repl_wait_timeout_done | default(120) }}"
     debug: "{{ dirsrv_debug | default(false) }}"
     log_every: "{{ 1 if (dirsrv_debug | default(false)) else 5 }}"
   loop: "{{ dirsrv_repl_suffixes }}"

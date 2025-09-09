@@ -19,6 +19,7 @@
   tags: [preflight, tls, csr]
 
 - name: Locate NSS DB password file (pin.txt or pwdfile.txt)
+  tags: [preflight, tls, csr]
   block:
     - name: Stat NSS pin.txt
       ansible.builtin.stat:
@@ -43,7 +44,7 @@
         that:
           - dirsrv_csr_pwdfile | length > 0
         fail_msg: "pin.txt/pwdfile.txt not found in {{ dirsrv_csr_nssdb_dir }}; required for NSS DB access."
-  tags: [tls, csr]
+  
 
 - name: Build certutil key args
   ansible.builtin.set_fact:
@@ -89,7 +90,7 @@
     res: "{{ _certutil_gen }}"
     __snap_dir: "{{ [dirsrv_artifact_root_effective | default(dirsrv_csr_artifacts_root_effective), inventory_hostname] | path_join }}"
     __raw_cmd: "{{ (res.cmd | default('')) | string }}"
-    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-f) +[^ ]+','-f ****') }}"
+    __san_cmd_1: "{{ __raw_cmd | regex_replace('(?i)(-f) +[^ ]+', '-f ****') }}"
     __san_cmd: "{{ __san_cmd_1 }}"
     __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
     __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
@@ -141,14 +142,5 @@
 
 - name: Append result for instance (certutil)
   ansible.builtin.set_fact:
-    dirsrv_csr_results: "{{ (dirsrv_csr_results | default([])) + [ {
-      'cn': inventory_hostname,
-      'sans': { 'dns': dirsrv_csr_dns_sans | default([]), 'ip': dirsrv_csr_ip_sans | default([]) },
-      'instance': dirsrv_csr_instance,
-      'tool': 'certutil',
-      'tool_path': dirsrv_certutil_bin,
-      'sha256': _csr_stat_post.stat.checksum | default(''),
-      'generated_at': ansible_date_time.iso8601 | default(''),
-      'csr_path': dirsrv_csr_csr_path
-    } ] }}"
+    dirsrv_csr_results: "{{ (dirsrv_csr_results | default([])) + [{'cn': inventory_hostname, 'sans': {'dns': dirsrv_csr_dns_sans | default([]), 'ip': dirsrv_csr_ip_sans | default([])}, 'instance': dirsrv_csr_instance, 'tool': 'certutil', 'tool_path': dirsrv_certutil_bin, 'sha256': _csr_stat_post.stat.checksum | default(''), 'generated_at': ansible_date_time.iso8601 | default(''), 'csr_path': dirsrv_csr_csr_path}] }}"
   tags: [tls, csr, artifacts]

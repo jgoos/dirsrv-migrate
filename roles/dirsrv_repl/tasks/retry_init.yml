@@ -7,7 +7,7 @@
   register: _repl_init_status_retry
   changed_when: false
   failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  no_log: true
   throttle: 1
 
 - name: Retry | Check agreement status (JSON) for errors/mismatch
@@ -28,12 +28,12 @@
   register: _repl_status_retry_json
   changed_when: false
   failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  no_log: true
   throttle: 1
 
 - name: Retry | Backoff before retrying init (transient)
   ansible.builtin.pause:
-    seconds: "{{ rhds_repl_retry_backoff | default(10) }}"
+    seconds: "{{ dirsrv_repl_retry_backoff | default(10) }}"
   when: >-
     (
       (_repl_init_status_retry.stdout | lower | default('')) is search('permission denied|disabled|ruv|busy|in progress')
@@ -50,8 +50,8 @@
     conn_url: "{{ dirsrv_repl_conn_url }}"
     dm_dn: "{{ dirsrv_dm_dn }}"
     dm_pw: "{{ dirsrv_password }}"
-    timeout: "{{ rhds_repl_retry_timeout | default(300) }}"
-    poll_interval: "{{ rhds_repl_wait_delay | default(3) }}"
+    timeout: "{{ dirsrv_repl_retry_timeout | default(300) }}"
+    poll_interval: "{{ dirsrv_repl_wait_delay | default(3) }}"
   throttle: 1
   when: >-
     (

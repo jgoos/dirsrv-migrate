@@ -3,7 +3,12 @@
 
 from __future__ import annotations
 from ansible.module_utils.basic import AnsibleModule
-import os, re, io, base64, gzip, shutil
+import os
+import re
+import io
+import base64
+import gzip
+import shutil
 
 
 def unfold(lines):

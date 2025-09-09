@@ -1,6 +1,22 @@
 Designing a Podman-based 389-DS Replication Testbed on macOS
 
-This document describes a reliable, repeatable containerized environment for testing multi-node 389 Directory Server replication on macOS (using Podman). The design supports two multi-master suppliers and multiple consumer replicas, or an all-supplier mesh topology, with end-to-end TLS, health checks, and comprehensive logging. We orchestrate container lifecycle with Podman Compose and configuration with Ansible roles/playbooks. Key decisions on networking, naming, and certificate handling are justified, and alternatives are discussed. A final section provides troubleshooting guidance for common issues.
+This document describes a reliable, repeatable containerized environment for testing multi-node 389 Directory Server replication on macOS (using Podman). The design supports two distinct environments (DEV/INT) with different storage and lifecycle characteristics, two multi-master suppliers and multiple consumer replicas, or an all-supplier mesh topology, with end-to-end TLS, health checks, and comprehensive logging. We orchestrate container lifecycle with Podman Compose and configuration with Ansible roles/playbooks. Key decisions on networking, naming, and certificate handling are justified, and alternatives are discussed. A final section provides troubleshooting guidance for common issues.
+
+## 0. Environment Matrix
+
+We support two reproducible environments for 389-DS (containers on macOS Podman VM + RHEL VMs):
+- **Development (DEV)** – persistent, longer-lived, restartable
+- **Integration Testing (INT)** – ephemeral, no persistence, never restarted once seeded
+- **VMs** – standard RHDS/389-ds-base on RHEL, must use same Ansible code
+
+| Dimension | DEV (persistent) | INT (ephemeral) | VMs |
+|-----------|----------------|-----------------|-----|
+| Storage | Bind mounts (config/db/logs/certs) | Tmpfs/anon volumes (no bind mounts) | Local FS under /etc/dirsrv, /var/lib/dirsrv |
+| Lifecycle | Start/stop/restart allowed | No restarts allowed; full teardown if needed | Start/stop/restart allowed (systemd) |
+| Data seeding | Optional; incremental | Deterministic, clean every run | Deterministic |
+| Image pinning | Tag-based (for iteration) | Immutable digest | Installed RPMs |
+| Logging | Persist on host | Export artifacts before teardown | Local logs, copy summaries |
+| DNS policy | Service names only | Service names only | FQDNs only |
 
 1. Architecture & Topology
 
@@ -43,6 +59,19 @@ Rationale: This design allows testing both hub-and-spoke replication (two master
 
 We opt for upstream 389-DS containers (from GitHub Container Registry or Docker Hub) rather than official RHDS images, because the upstream images are readily available and do not require a Red Hat subscription. The upstream container’s dscontainer entrypoint will initialize an instance on first startup and start the ns-slapd server process inside the container ￼. This avoids needing a full systemd inside the container (which the official RHDS UBI image might use) and fits better with rootless Podman usage. The upstream container supports configuration via environment variables (e.g., setting the Directory Manager password, suffix) and includes internal tuning for container environments ￼. (If RHDS images were used, one might need to run them with --privileged or an init system, which is more complex. So using 389-DS upstream is simpler for our testbed.)
 
+## 1.5 Naming & Addressing
+
+- **Containers**: always use Compose service names (ds-s1, ds-s2, …).
+- **VMs**: always use FQDN (e.g., rhds-a1.example.com).
+- **Variable**: `dirsrv_advertised_hostname_final = the only name ever used in agreements or LDAP URLs`.
+
+**Resolution rule (priority order):**
+1. `dirsrv_advertised_hostname` if defined
+2. If `dirsrv_target_type == container` → `inventory_hostname` (service name)
+3. Else → `ansible_fqdn` | default(`inventory_hostname`)
+
+🚫 **No IP literals. No mixing service names and FQDNs.**
+
 2. Podman Machine Setup (macOS host)
 
 Podman VM Setup: Since containers cannot run natively on macOS, we create a Podman virtual machine using the podman machine command. The following initializes a VM with adequate resources and file sharing for our project:
@@ -73,9 +102,27 @@ In summary, we choose rootless networking inside the Podman VM, meaning containe
 
 Finally, to avoid collisions across test runs, we ensure that container names and hostnames remain the same each run (Podman Compose will reuse the names or we explicitly set container_name). We also tear down the environment between runs (destroying containers and the dsnet network if needed) to avoid stale DNS cache entries or IP reuse issues. The podman network create with a fixed subnet ensures we get the same IP range each time, which helps with deterministic behavior. If multiple testbeds were run concurrently (e.g., two separate dsnet networks), the domain names could conflict; one could use different network/domain names per test to isolate them.
 
+## 2.5 Storage Layout
+
+**DEV**
+- Persist all instance paths: /etc/dirsrv/..., /var/lib/dirsrv/..., /var/log/dirsrv/..., /etc/dirsrv/.../certs, /data/db.
+- Bind mounts live under .ansible/containers/<svc>/....
+
+**INT**
+- Tmpfs/anon volumes only.
+- Recommended tmpfs:
+  - /var/lib/dirsrv/...: size=1G
+  - /var/log/dirsrv/...: size=128M
+- Any artifact needed must be copied out before teardown.
+
 3. Podman Compose Configuration (4-node Example)
 
-We use a Podman Compose YAML to define the directory server containers and their relationships. This Compose file can be run with the podman-compose tool (which uses the Podman socket behind the scenes). Below is a sample for 4 nodes (2 suppliers s1, s2 and 2 consumers c1, c2). It defines a user network, volumes for data/config/certs/logs, and health checks. All volumes and paths are set under the shared /srv/389ds-lab mount so they persist on the host.
+We use a Podman Compose YAML to define the directory server containers and their relationships. This Compose file can be run with the podman-compose tool (which uses the Podman socket behind the scenes). Below is a sample for 4 nodes (2 suppliers s1, s2 and 2 consumers c1, c2). It defines a user network, volumes for data/config/certs/logs, and health checks.
+
+**DEV Environment**: All volumes and paths are set under the shared /srv/389ds-lab mount so they persist on the host.
+**INT Environment**: Uses tmpfs/anonymous volumes only, with artifacts exported before teardown.
+
+The compose configuration varies based on the environment:
 
 # podman-compose.yml
 version: '3.8'
@@ -267,6 +314,8 @@ replication_mgr_pw: "Changeme!23"        # (Use Ansible Vault to encrypt in real
 enable_tls: true
 log_capture: true
 dm_password: "password"                  # Directory Manager password for all instances
+env_type: "dev"                         # "dev" or "int" - controls lifecycle and storage behavior
+dirsrv_no_restart: "{{ env_type == 'int' }}"  # Enforces no restarts in INT environment
 
 Key variables explained:
 	•	suffix: The DIT suffix we are testing replication on (all instances will have this suffix).
@@ -275,7 +324,9 @@ Key variables explained:
 	•	replication_mgr_dn and _pw: The special replication user DN and password that will be created on each server for replication binds. We standardized on one credentials set for simplicity (all servers will have an entry cn=Replication Manager,cn=config with this password). This user will be used by suppliers to bind to peers. (You could have distinct ones per agreement, but one global user is easiest to manage.)
 	•	enable_tls: A toggle to allow turning off TLS for troubleshooting or testing (if false, we could configure replication agreements over LDAP on port 389 without StartTLS, and skip certificate generation).
 	•	log_capture: If true, our roles will attempt to gather logs after tests.
-	•	dm_password: The Directory Manager password set in all containers (we used “password”). This is needed for Ansible to run dsconf or LDAP operations with admin rights.
+	•	dm_password: The Directory Manager password set in all containers (we used "password"). This is needed for Ansible to run dsconf or LDAP operations with admin rights.
+	•	env_type: Controls environment behavior ("dev" for persistent/restartable, "int" for ephemeral/no-restarts).
+	•	dirsrv_no_restart: Boolean flag that enforces lifecycle contracts (true for INT, false for DEV/VMs).
 
 Roles: We break out roles for clarity:
 	•	dirs389.instance: Tasks to ensure the DS instances are up and configured with basic settings (creating suffix if not already present, setting schema or id2entry settings if needed, ensuring Directory Manager password is set – though in our case it’s done via env).
@@ -575,13 +626,20 @@ Real-time Observation: We could use podman logs -f to watch a container’s outp
 
 9. Makefile Targets and Test Matrix
 
-To simplify running the testbed, we use a Makefile to define common operations:
+To simplify running the testbed, we use a Makefile to define common operations that support both DEV and INT environments:
 
-.PHONY: up down mesh reset_soft reset_hard logs test
+.PHONY: up down mesh reset_soft reset_hard logs test up_dev up_int
 
-up:   ## Start containers and perform initial setup
+# Environment-specific targets
+up_dev:   ## Start DEV environment (persistent containers)
 	@podman-compose up -d
-	@ansible-playbook -i inventories/lab/hosts.yml provision.yml
+	@ansible-playbook -i inventories/lab/hosts.yml -e env_type=dev provision.yml
+
+up_int:   ## Start INT environment (ephemeral containers)
+	@podman-compose up -d
+	@ansible-playbook -i inventories/lab/hosts.yml -e env_type=int provision.yml
+
+up: up_dev  ## Default to DEV environment
 
 mesh: ## Configure replication topology (after up)
 	@ansible-playbook -i inventories/lab/hosts.yml replicate.yml
@@ -595,10 +653,22 @@ test: ## Full test run (up -> mesh -> verify -> logs)
 	@$(MAKE) verify
 	@$(MAKE) logs
 
-down: ## Stop and remove containers (keeps volumes)
+test_dev: ## Full DEV test run
+	@$(MAKE) up_dev
+	@$(MAKE) mesh
+	@$(MAKE) verify
+	@$(MAKE) logs
+
+test_int: ## Full INT test run (ephemeral, no restarts allowed)
+	@$(MAKE) up_int
+	@$(MAKE) mesh
+	@$(MAKE) verify
+	@$(MAKE) logs
+
+down: ## Stop and remove containers (keeps volumes for DEV)
 	@podman-compose down
 
-reset_soft: ## Reload data from backup, preserve config & certs
+reset_soft: ## Reload data from backup, preserve config & certs (DEV only)
 	@ansible-playbook -i inventories/lab/hosts.yml reset_soft.yml
 
 reset_hard: ## Destroy and re-create everything from scratch
@@ -611,28 +681,45 @@ logs: ## Collect logs and bundle into artifact
 	@ansible-playbook -i inventories/lab/hosts.yml collect_logs.yml
 
 Explanation:
-	•	up: Brings up the Podman containers (detached) and runs the provisioning playbook. This will wait for healthchecks, generate certs, distribute them, and ensure each instance is online with TLS and the suffix.
-	•	mesh: Runs the replication setup (assuming containers are up). This idempotently configures replication per the chosen topology (by default, 2 suppliers + N consumers).
-	•	verify: Runs checks. This separation allows one to re-run verify after making changes or injecting test data.
-	•	test: A convenience target to do the whole sequence (except down). This could be the main CI target.
-	•	down: Stops and removes the containers, but leaves volumes intact (so logs, data, certs persist).
-	•	reset_soft: This target would perform a soft reset of data. The idea is to revert the directory contents to a known baseline without rebuilding everything. One way is to use the built-in backup/restore of 389 DS. We could have, as part of provision, taken an LDIF backup or database backup after initial load. Here we’d use db2bak (database to backup) and bak2db (backup to database) commands via dsconf or dsctl. Alternatively, if we saved an LDIF of initial state, we could re-import it. This avoids tearing down config or certs. For example, dsconf instance backup create to create a backup, and later dsconf instance restore backup-id. Our Ansible role could orchestrate that. This is useful for repetitive testing of replication initialization or clean data load without regenerating certs each time.
-	•	reset_hard: Destroys everything: stops containers, removes volumes (podman-compose down -v does remove named volumes but since we used host bind mounts, we manually clean them with rm -rf). It also removes the network and then calls make up to rebuild from scratch. Use this if something in config changed or to get a pristine environment.
-	•	logs: Runs the log collection, producing the artifact zip on the host.
+	•	up_dev: Brings up DEV environment with persistent bind mounts. Allows restarts and preserves state.
+	•	up_int: Brings up INT environment with tmpfs volumes. No restarts allowed after seeding begins.
+	•	up: Default target (uses DEV environment).
+	•	test_dev/test_int: Environment-specific full test runs with appropriate lifecycle management.
+	•	reset_soft: Only applicable to DEV environment - reloads data while preserving config/certs.
+	•	reset_hard: Destroys everything and rebuilds (works for both environments).
+	•	logs: In DEV, collects from persistent bind mounts. In INT, exports artifacts before teardown.
 
 We include descriptions for each target (so make help could list them). Also we ensure commands like podman network rm dsnet ignore errors (in case it’s already gone). The sudo rm -rf is only needed if the VM’s mount is somehow root-owned; in our case, likely not, since directories in /srv/389ds-lab were created by our user via mounts.
 
-Test Matrix: Our setup is parameterized to allow different scenarios:
-	•	Number of consumers (N): By editing the inventory (e.g., adding c3, c4 with new replica IDs) and adjusting group_vars (like number of consumers or using all hosts in consumers group), the playbooks should handle an arbitrary N (within reason – each consumer adds agreements on each supplier).
-	•	Topology shape: By changing topology var to “mesh_all_suppliers”, we could treat what are labeled “consumers” as suppliers too. In a full mesh, every server would get a replica ID and agreements to every other. We’d need to ensure our playbook knows to do that (e.g., if topology == mesh, then for each pair of servers create two agreements). This can be implemented with with_items loops or nested loops in Ansible. Mesh testing would stress the system with many replication links (for 4 nodes, each node has 3 agreements out, 12 total, as in our diagram).
-	•	TLS on/off: Setting enable_tls=false in group_vars could make the roles skip certificate creation and use LDAP (389) for agreements instead of LDAPS. This could test baseline replication without TLS overhead or isolate if an issue is due to TLS. We’d simply change protocol to LDAP and maybe have a flag not to require secure binds (389 DS can be configured to require TLS for simple binds – by default it doesn’t for replication user under cn=config, but we’d ensure nsslapd-require-secure-binds is off in such case).
-	•	Latency/Failure injection: We can test replication under adverse network conditions. If feasible, we could introduce artificial latency or packet loss between containers. One method: use tc in the Podman VM on the dsnet bridge interface to add delay for certain flows. Or run a netem container in between. This is advanced, but for example:
+Test Matrix: Our setup is parameterized to allow different scenarios across both DEV and INT environments:
 
-sudo tc qdisc add dev cni-podman0 root netem delay 100ms 10ms
+**Environment Matrix Combinations:**
+	•	DEV with persistent bind mounts: For development, iterative testing, and debugging.
+	•	INT with tmpfs volumes: For clean integration testing with deterministic seeding and artifact export.
+	•	Both environments support the same topology variations and configuration options.
 
-would add ~100ms latency on the network (cni-podman0 is the default Podman bridge) – affecting all traffic. To target specific container, would need filtering by IP. This might be something to try manually. The framework can accommodate it by perhaps an Ansible task in verify or a separate target. For now, we note it as a possible extension.
+**Topology Variations:**
+	•	Number of consumers (N): By editing the inventory (e.g., adding c3, c4 with new replica IDs) and adjusting group_vars, the playbooks handle arbitrary N (each consumer adds agreements on each supplier).
+	•	Topology shape: Setting topology="mesh_all_suppliers" treats all nodes as suppliers with full mesh replication. Each pair gets bidirectional agreements (4 nodes = 12 total agreements).
+	•	TLS on/off: Setting enable_tls=false skips certificate generation and uses LDAP (389) for agreements. Useful for baseline testing or TLS troubleshooting.
 
-	•	Multi-run testing: We can run, for instance, make test with different environment toggles. If integrated into CI, one could loop over a few combos: TLS on/off, mesh vs mmr, maybe 5 consumers, etc. The design is meant to be general enough.
+**Environment-Specific Considerations:**
+	•	DEV: Supports reset_soft for data reloading while preserving config/certs. Allows container restarts for debugging.
+	•	INT: Enforces no restarts after seeding (dirsrv_no_restart=true). All artifacts must be exported before teardown. Uses deterministic seeding sequence.
+	•	Both: Support same timeouts, health checks, and acceptance criteria.
+
+**Advanced Testing Scenarios:**
+	•	Latency/Failure injection: Use tc in Podman VM for network simulation:
+	  ```
+	  sudo tc qdisc add dev cni-podman0 root netem delay 100ms 10ms
+	  ```
+	•	Time sync validation: Ensure Podman VM has NTP enabled (max 2s skew between nodes).
+	•	Resource limits: Adjust Podman machine CPU/memory or container ulimits for performance testing.
+
+**CI Integration:**
+	•	Run make test_dev for development validation.
+	•	Run make test_int for clean integration testing with SLA enforcement.
+	•	Both support the same acceptance criteria: convergence within timeouts, no restarts in INT, artifact export/persistence.
 
 10. Troubleshooting Guide
 

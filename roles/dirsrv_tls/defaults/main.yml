@@ -22,3 +22,6 @@ dirsrv_tls_cert_nickname: "{{ inventory_hostname }}"
 # Internal secure port for LDAPS inside the instance/container
 dirsrv_tls_secure_port: 636
 
+# Lifecycle policy (INT forbids restarts)
+env_type: dev
+dirsrv_no_restart: "{{ env_type == 'int' }}"
