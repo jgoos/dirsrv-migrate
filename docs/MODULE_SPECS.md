@@ -21,7 +21,7 @@ We will ship a **small Ansible collection** e.g. `directories.ds` with:
 
 * Modules run **on the supplier host** (via `delegate_to: <supplier>` or running the play on that host) using `ldapi://` + SASL/EXTERNAL (root or dirsrv user).
 * For remote reads (rare), support LDAPS with SIMPLE or SSLCLIENTAUTH (mTLS).
-* No parsing of `dsconf` output; use LDAP entries/attributes directly.
+* Prefer LDAP entries/attributes directly. Optionally, when available, parse `dsconf -j replication monitor` to enrich observations with backlog and RUV hints.
 
 ---
 
@@ -53,11 +53,10 @@ We will ship a **small Ansible collection** e.g. `directories.ds` with:
 
 **Health semantics (what `ds_repl_wait` enforces):**
 
-* Agreement **enabled** (`nsds5ReplicaEnabled` on the supplier replica).
-* `LastUpdateStatus` code == **0**.
-* `LastUpdateEnd` **not stale** (≤ `stale_seconds` ago).
-* If `require_init_success`: `LastInitStatus` code == **0**.
-* Optional steady-state: RUV unchanged for `steady_ok_polls` polls or matches reference (future).
+* Configured: agreement exists and is enabled.
+* Working: any of update activity (busy=true), monotonic `LastUpdateStart/End`, or recent success within `stale_seconds`.
+* Finished: not busy, init success (when required), all recent successes; if backlog from monitor is available, it must be `0`.
+* Phased gating: `require` booleans with `timeouts` allow fast failure in small datasets.
 
 ---
 
@@ -148,6 +147,10 @@ tls_client_cert:  {type: path, required: false}
 tls_client_key:   {type: path, required: false}
 connect_timeout:  {type: int, default: 5}
 op_timeout:       {type: int, default: 30}
+agreements:       {type: list, elements: str, required: false}
+stale_seconds:    {type: int, default: 120}
+monitor:          {type: bool, default: true}
+monitor_timeout:  {type: int, default: 10}
 ```
 
 **Behavior:**
@@ -159,7 +162,8 @@ op_timeout:       {type: int, default: 30}
 
   * `dn`, `nsds5ReplicaHost`, `nsds5ReplicaPort`, `nsds5ReplicaBindDN`
   * `nsds5replicaLastInitStatus`, `nsds5replicaLastInitEnd`
-  * `nsds5replicaLastUpdateStatus`, `nsds5replicaLastUpdateEnd`
+  * `nsds5replicaLastUpdateStatus`, `nsds5replicaLastUpdateStart`, `nsds5replicaLastUpdateEnd`, `nsds5ReplicaUpdateInProgress`
+  * Optional: backlog per agreement via `dsconf -j replication monitor` (LDAPI best-effort)
 * Parse leading integer codes from both status strings (regex `^(-?\d+)`)
 * Convert times to epoch with the filter.
 
@@ -186,10 +190,21 @@ op_timeout:       {type: int, default: 30}
       "last_init_epoch": 1757246131,
       "last_update_status": "0 Update OK",
       "last_update_code": 0,
+      "last_update_start": "20250907091710Z",
+      "last_update_start_epoch": 1757246230,
       "last_update_end": "20250907091740Z",
-      "last_update_epoch": 1757246260
+      "last_update_epoch": 1757246260,
+      "busy": false,
+      "backlog": 0
     }
   ]
+  ,
+  "summary": {
+    "configured": true,
+    "working": true,
+    "finished": true,
+    "problems": []
+  }
 }
 ```
 

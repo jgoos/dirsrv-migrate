@@ -1,3 +1,8 @@
+- name: Monitor | Ensure artifact root fact (fallback)
+  ansible.builtin.set_fact:
+    dirsrv_artifact_root_effective: "{{ [playbook_dir, '.ansible', 'artifacts'] | path_join }}"
+  when: dirsrv_artifact_root_effective is not defined
+
 - name: Monitor | Collect replication info via module
   vars:
     suffix: "{{ item }}"
@@ -15,6 +20,7 @@
     msg: >-
       suffix={{ item.item }} enabled={{ item.replica.enabled | default(None) }}
       agmts={{ (item.agreements | map(attribute='host') | list) | default([]) }}
+      summary={{ item.summary | default({}) }}
   loop: "{{ dirsrv_repl_info_results.results | default([]) }}"
   when:
     - dirsrv_repl_suffixes | length > 0
@@ -24,7 +30,7 @@
     suffix: "{{ item.item }}"
     __snap_dir: "{{ [dirsrv_artifact_root_effective | default([playbook_dir, '.ansible', 'artifacts'] | path_join), inventory_hostname] | path_join }}"
   ansible.builtin.copy:
-    content: "{{ {'host': inventory_hostname, 'suffix': suffix, 'replica': item.replica, 'agreements': item.agreements} | to_nice_json }}"
+    content: "{{ {'host': inventory_hostname, 'suffix': suffix, 'replica': item.replica, 'agreements': item.agreements, 'summary': (item.summary | default({}))} | to_nice_json }}"
     dest: "{{ [__snap_dir, 'repl-info-' ~ (suffix | regex_replace('[^A-Za-z0-9_.-]','_')) ~ '.json'] | path_join }}"
     mode: "0640"
   connection: local

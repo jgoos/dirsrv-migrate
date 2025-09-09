@@ -130,17 +130,28 @@ def run_module():
     if not p.get('wait', True):
         module.exit_json(changed=True)
 
-    # Poll for success
+    # Poll for success with progress reporting
     end_by = time.time() + int(p.get('timeout', 600))
     last_out = ''
+    poll_count = 0
+    start_time = time.time()
+
     while time.time() < end_by:
+        poll_count += 1
+        elapsed = time.time() - start_time
+
         st = _status(p, timeout=p.get('op_timeout', 60))
         out = st.stdout.decode('utf-8', errors='ignore')
         last_out = out
+
+        # Log progress every 10 polls or when status changes
+        if poll_count % 10 == 0 or 'error' in out.lower():
+            module.warn(f"ds_repl_init: poll={poll_count} elapsed={elapsed:.1f}s status='{out.strip()}'")
+
         # success indicators borrowed from role's wait logic
         low = out.lower()
         if ('successfully initialized' in low) or ('total init succeeded' in low):
-            module.exit_json(changed=True, status=out)
+            module.exit_json(changed=True, status=out, polls=poll_count, elapsed_seconds=elapsed)
         time.sleep(int(p.get('poll_interval', 5)))
 
     module.fail_json(msg='Timeout waiting for successful initialization', status=last_out)

@@ -38,6 +38,9 @@ services:
         source: ../.ansible/containers/ds-s1/var-lib-dirsrv-slapd-localhost
         target: /var/lib/dirsrv/slapd-localhost:Z
       - type: bind
+        source: ../.ansible/containers/ds-s1/data-db
+        target: /data/db:Z
+      - type: bind
         source: ../.ansible/containers/ds-s1/etc-dirsrv-slapd-localhost-certs
         target: /etc/dirsrv/slapd-localhost/certs:Z
       - type: bind
@@ -71,6 +74,9 @@ services:
       - type: bind
         source: ../.ansible/containers/ds-s2/var-lib-dirsrv-slapd-localhost
         target: /var/lib/dirsrv/slapd-localhost:Z
+      - type: bind
+        source: ../.ansible/containers/ds-s2/data-db
+        target: /data/db:Z
       - type: bind
         source: ../.ansible/containers/ds-s2/etc-dirsrv-slapd-localhost-certs
         target: /etc/dirsrv/slapd-localhost/certs:Z
@@ -106,6 +112,9 @@ services:
         source: ../.ansible/containers/ds-c1/var-lib-dirsrv-slapd-localhost
         target: /var/lib/dirsrv/slapd-localhost:Z
       - type: bind
+        source: ../.ansible/containers/ds-c1/data-db
+        target: /data/db:Z
+      - type: bind
         source: ../.ansible/containers/ds-c1/etc-dirsrv-slapd-localhost-certs
         target: /etc/dirsrv/slapd-localhost/certs:Z
       - type: bind
@@ -139,6 +148,9 @@ services:
       - type: bind
         source: ../.ansible/containers/ds-c2/var-lib-dirsrv-slapd-localhost
         target: /var/lib/dirsrv/slapd-localhost:Z
+      - type: bind
+        source: ../.ansible/containers/ds-c2/data-db
+        target: /data/db:Z
       - type: bind
         source: ../.ansible/containers/ds-c2/etc-dirsrv-slapd-localhost-certs
         target: /etc/dirsrv/slapd-localhost/certs:Z

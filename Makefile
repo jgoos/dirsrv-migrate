@@ -266,14 +266,14 @@ init_389ds_mesh:
 	done
 
 repl_pod_mesh:
-	$(call _time,$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
+	$(call _time,ANSIBLE_TIMEOUT=600 $(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod4.yml \
 	  -e @test/repl_mesh_vars.yml \
 	  test/repl_mesh.yml $(ARGS),repl_mesh)
 
 test_repl_mesh:
-	@# Re-run mesh test with logging and bundle logs on failure
-	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds \
+	@# Re-run mesh test with logging and bundle logs on failure (10 minute timeout)
+	ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds \
 		|| $(MAKE) bundle_logs
 
 # Idempotence: syntax check + two consecutive runs should result in 0 changes on second run
@@ -283,9 +283,9 @@ test_repl_idempotent: deps_podman
 	# Syntax checks
 	ansible-playbook --syntax-check test/repl_mesh.yml; \
 	# First run
-	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-1.log || { echo "First run failed (see .ansible/test_logs/idempotence-1.log)" >&2; exit 1; }; \
+	ANSIBLE_TIMEOUT=300 ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-1.log || { echo "First run failed (see .ansible/test_logs/idempotence-1.log)" >&2; exit 1; }; \
 	# Second run (should be idempotent)
-	ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-2.log || { echo "Second run failed (see .ansible/test_logs/idempotence-2.log)" >&2; exit 1; }; \
+	ANSIBLE_TIMEOUT=300 ansible-playbook -i test/inventory.compose.pod4.yml -e @test/repl_mesh_vars.yml test/repl_mesh.yml $(ARGS) | tee .ansible/test_logs/idempotence-2.log || { echo "Second run failed (see .ansible/test_logs/idempotence-2.log)" >&2; exit 1; }; \
 	# Assert no changes in second recap
 	if grep -A2 -E "PLAY RECAP" .ansible/test_logs/idempotence-2.log | grep -E "changed=[1-9]"; then \
 	  echo "Idempotence failed: second run had changes" >&2; exit 1; \

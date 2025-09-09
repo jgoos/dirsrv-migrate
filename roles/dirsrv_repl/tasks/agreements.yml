@@ -277,9 +277,9 @@
     instance: "{{ dirsrv_repl_this_node.instance }}"
     suffix: "{{ suffix }}"
     agreement: "{{ agree.name }}"
-    timeout: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | default(600) }}"
-    poll_interval: "{{ dirsrv_repl_retry_settings.base_delay | default(2) }}"
-  throttle: 1
+    timeout: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | default(300) }}"
+    poll_interval: "{{ dirsrv_repl_retry_settings.base_delay | default(1) }}"
+  # throttle: 1  # Removed for parallel initialization performance
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value
