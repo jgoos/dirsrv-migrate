@@ -384,7 +384,6 @@ def run_module():
                     moving = True
             # Success signals
             uc = o.get('update_code')
-            us = (o.get('update_status') or '').lower()
             recent_ok = (uc == 0) and (age is not None and age >= 0 and age <= stale)
             busy = (o.get('busy') is True)
 
