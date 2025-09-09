@@ -49,3 +49,7 @@ rhds_repl_wait_stale_seconds: 60
 rhds_repl_wait_steady_ok_polls: 2
 rhds_repl_wait_delay: 2
 rhds_repl_wait_timeout: 240
+rhds_repl_wait_require_finished: true
+rhds_repl_wait_timeout_configured: 20
+rhds_repl_wait_timeout_start: 30
+rhds_repl_wait_timeout_done: 120
