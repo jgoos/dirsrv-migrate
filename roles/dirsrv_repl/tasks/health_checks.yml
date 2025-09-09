@@ -56,7 +56,7 @@
       when: 
         - ansible_system is defined
         - ansible_system == "Linux"
-        - time_sync_status.rc != 0 or "synchronized: yes" not in time_sync_status.stdout
+        - '(time_sync_status.rc | int) != 0 or ("synchronized: yes" not in (time_sync_status.stdout | default("")))'
 
     - name: Health Checks | Check data directory status
       ansible.builtin.stat:

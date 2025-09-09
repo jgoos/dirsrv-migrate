@@ -140,6 +140,33 @@
   when: not ansible_check_mode
   tags: [preflight, network_validation]
 
+- name: Preflight | Gather datetime facts (INT only)
+  ansible.builtin.setup:
+    filter: ansible_date_time
+  when: env_type | default('dev') == 'int'
+
+- name: Preflight | Assert timezone present (INT)
+  ansible.builtin.assert:
+    that:
+      - ansible_date_time is defined
+      - ansible_date_time.tz is defined
+      - (ansible_date_time.tz | string | length) > 0
+    fail_msg: "Timezone is not detected; ensure system clock/timezone configured (INT requires sane time)."
+  when: env_type | default('dev') == 'int'
+
+- name: Preflight | Assert time sync service active (INT)
+  ansible.builtin.assert:
+    that:
+      - (
+          ('chronyd.service' in ansible_facts.services and ansible_facts.services['chronyd.service'].state == 'running') or
+          ('ntpd.service' in ansible_facts.services and ansible_facts.services['ntpd.service'].state == 'running') or
+          ('systemd-timesyncd.service' in ansible_facts.services and ansible_facts.services['systemd-timesyncd.service'].state == 'running')
+        )
+    fail_msg: "NTP/chronyd/timesyncd not active; INT requires time sync to be running on all nodes."
+  when:
+    - env_type | default('dev') == 'int'
+    - ansible_facts.services is defined
+
 - name: Preflight | Include comprehensive health checks
   ansible.builtin.include_tasks: health_checks.yml
   when: not ansible_check_mode

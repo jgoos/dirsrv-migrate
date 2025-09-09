@@ -6,6 +6,7 @@
       - dirsrv_password | length > 0
     fail_msg: "Provide Directory Manager credentials via dirsrv_dm_dn and dirsrv_password (vault recommended)."
 
+
 - name: Enable | Build local dsconf connection URL
   ansible.builtin.set_fact:
     dirsrv_repl_conn_url: >-
@@ -14,6 +15,7 @@
 # Test-only: enable DS logs to ensure access/audit present (best-effort)
 - name: Log | Enable access log (test-only)
   ansible.builtin.shell: |
+    set -o pipefail
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
     dn: cn=config
     changetype: modify
@@ -21,7 +23,7 @@
     nsslapd-accesslog-logging-enabled: on
     LDIF
   args:
-    executable: /bin/sh
+    executable: /bin/bash
   register: _log_access_on
   changed_when: _log_access_on.rc == 0
   failed_when: false
@@ -29,6 +31,7 @@
 
 - name: Log | Enable audit log if supported (test-only)
   ansible.builtin.shell: |
+    set -o pipefail
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
     dn: cn=config
     changetype: modify
@@ -36,7 +39,7 @@
     nsslapd-auditlog-logging-enabled: on
     LDIF
   args:
-    executable: /bin/sh
+    executable: /bin/bash
   register: _log_audit_on
   changed_when: _log_audit_on.rc == 0
   failed_when: false
@@ -47,7 +50,7 @@
 - name: Enable | Assert replica-id present for suppliers/hubs
   vars:
     repl_role: >-
-      {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}
+      {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier', 'hub'] else 'consumer' }}
     replica_map: "{{ dirsrv_repl_replica_ids[item] | default({}) }}"
     repl_id: "{{ replica_map.get(inventory_hostname) }}"
   ansible.builtin.assert:
@@ -68,7 +71,7 @@
   register: _pre_repl_get
   changed_when: false
   failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_debug | bool
 
@@ -101,7 +104,7 @@
 - name: Enable | Ensure replication enabled via module
   vars:
     repl_role: >-
-      {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier','hub'] else 'consumer' }}
+      {{ 'supplier' if dirsrv_repl_this_node.role in ['supplier', 'hub'] else 'consumer' }}
     replica_map: "{{ dirsrv_repl_replica_ids[item] | default({}) }}"
     repl_id: "{{ replica_map.get(inventory_hostname) }}"
   directories.ds.ds_repl_enable:
@@ -150,7 +153,7 @@
     suffix: "{{ item.item }}"
     __snap_dir: "{{ [dirsrv_artifact_root_effective, inventory_hostname] | path_join }}"
     __raw_cmd: "{{ (res.cmd | default('')) | string }}"
-    __san_cmd: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+','-w ****') }}"
+    __san_cmd: "{{ __raw_cmd | regex_replace('(?i)(-w) +[^ ]+', '-w ****') }}"
     __parts: "{{ (res.delta | default('0:0:0.0')) | regex_findall('([0-9]+)') }}"
     __dur_ms: "{{ (__parts[0] | default('0') | int) * 3600000 + (__parts[1] | default('0') | int) * 60000 + (__parts[2] | default('0') | int) * 1000 + ((__parts[3] | default('0') | int) // 1000) }}"
   ansible.builtin.copy:
@@ -192,7 +195,7 @@
   register: _post_agmt_list
   changed_when: false
   failed_when: false
-  no_log: "{{ not (dirsrv_debug | default(false) | bool) }}"
+  no_log: true
   loop: "{{ dirsrv_repl_suffixes }}"
   when: dirsrv_debug | bool
 
@@ -225,7 +228,7 @@
       - base
       - -LLL
       - -b
-      - 'cn={{ suffix | replace("=","\\3D") | replace(",","\\2C") }},cn=mapping tree,cn=config'
+      - 'cn={{ suffix | replace("=", "\\3D") | replace(",", "\\2C") }},cn=mapping tree,cn=config'
       - \*
   register: _post_mapping
   changed_when: false
@@ -262,7 +265,7 @@
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
     - dirsrv_repl_this_node.role == 'consumer'
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
 
 - name: Enable | Build referral removal matrix
   vars:
@@ -282,11 +285,11 @@
       }}
   ansible.builtin.set_fact:
     dirsrv_repl_refs_matrix: >-
-      {{ (dirsrv_repl_refs_matrix | default([])) + [ { 'suffix': _suffix, 'refs': _urls } ] }}
+      {{ (dirsrv_repl_refs_matrix | default([])) + [{'suffix': _suffix, 'refs': _urls}] }}
   loop: "{{ dirsrv_repl_repl_get.results | default([]) }}"
   when:
     - dirsrv_repl_this_node.role == 'consumer'
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
 
 - name: Enable | Remove consumer referrals (lab only)
   ansible.builtin.command: >-
@@ -301,7 +304,7 @@
     - refs
   when:
     - dirsrv_repl_this_node.role == 'consumer'
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
 
 - name: Enable | Read mapping-tree state/referral (lab only)
   ansible.builtin.command:
@@ -315,7 +318,7 @@
       - base
       - -LLL
       - -b
-      - "cn={{ item | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config"
+      - "cn={{ item | replace('=', '\\3D') | replace(',', '\\2C') }},cn=mapping tree,cn=config"
       - nsslapd-state
       - nsslapd-referral
   register: dirsrv_repl_map_read
@@ -323,7 +326,7 @@
   failed_when: false
   loop: "{{ dirsrv_repl_suffixes }}"
   when:
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
 
 - name: Enable | Compute mapping-tree adjustments needed
@@ -339,44 +342,46 @@
       }}
   loop: "{{ dirsrv_repl_map_read.results | default([]) }}"
   when:
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
 
 - name: Enable | Force mapping-tree state to backend (lab only)
   ansible.builtin.shell: |
+    set -o pipefail
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item.suffix | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=', '\\3D') | replace(',', '\\2C') }},cn=mapping tree,cn=config
     changetype: modify
     replace: nsslapd-state
     nsslapd-state: backend
     LDIF
   args:
-    executable: /bin/sh
+    executable: /bin/bash
   register: dirsrv_repl_mapstate_backend
   changed_when: dirsrv_repl_mapstate_backend.rc == 0
   failed_when: false
   no_log: true
   loop: "{{ _dirsrv_map_actions | default([]) }}"
   when:
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
     - item.need_state | bool
 
 - name: Enable | Remove mapping-tree referral (lab only)
   ansible.builtin.shell: |
+    set -o pipefail
     cat <<'LDIF' | ldapmodify -Y EXTERNAL -H "{{ dirsrv_ldapi_uri }}"
-    dn: cn={{ item.suffix | replace('=','\\3D') | replace(',','\\2C') }},cn=mapping tree,cn=config
+    dn: cn={{ item.suffix | replace('=', '\\3D') | replace(',', '\\2C') }},cn=mapping tree,cn=config
     changetype: modify
     delete: nsslapd-referral
     LDIF
   args:
-    executable: /bin/sh
+    executable: /bin/bash
   register: dirsrv_repl_mapref_del
   changed_when: dirsrv_repl_mapref_del.rc == 0
   failed_when: false
   no_log: true
   loop: "{{ _dirsrv_map_actions | default([]) }}"
   when:
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
     - dirsrv_ldapi_uri | default('') | length > 0
     - item.has_ref | bool
 
@@ -390,12 +395,26 @@
   changed_when: dirsrv_repl_restart.rc == 0
   failed_when: false
   when:
-    - rhds_disable_referrals | default(false)
+    - dirsrv_repl_disable_referrals | default(false)
     - (
         (dirsrv_repl_mapstate_backend is defined and (dirsrv_repl_mapstate_backend.results | default([]) | length) > 0) or
         (dirsrv_repl_mapref_del is defined and (dirsrv_repl_mapref_del.results | default([]) | length) > 0)
       )
     - not ansible_check_mode
+    - not dirsrv_no_restart | bool
+
+- name: Enable | No-restart policy active, restart skipped (INT)
+  ansible.builtin.debug:
+    msg: "INT policy: restart skipped due to dirsrv_no_restart=true (mapping-tree changes pending)."
+    warn: true
+  when:
+    - dirsrv_repl_disable_referrals | default(false)
+    - (
+        (dirsrv_repl_mapstate_backend is defined and (dirsrv_repl_mapstate_backend.results | default([]) | length) > 0) or
+        (dirsrv_repl_mapref_del is defined and (dirsrv_repl_mapref_del.results | default([]) | length) > 0)
+      )
+    - not ansible_check_mode
+    - dirsrv_no_restart | bool
 
 - name: Enable | Ensure replication manager exists (SIMPLE)
   directories.ds.ds_repl_manager:
@@ -461,6 +480,7 @@
   register: dirsrv_repl_mgr_search
   changed_when: false
   failed_when: dirsrv_repl_mgr_search.rc != 0
+  no_log: true
   when:
     - dirsrv_repl_verify_post_enable | bool
     - dirsrv_repl_auth.method == 'SIMPLE'
@@ -499,6 +519,7 @@
         ((dirsrv_repl_get_cfg.stdout | from_json).attrs.nsds5replicabinddn | default([])) | map('lower') | list
       ) is not contains (dirsrv_repl_auth.bind_dn | lower)
     )
+  no_log: true
   with_subelements:
     - "{{ dirsrv_repl_agreements | dict2items }}"
     - value

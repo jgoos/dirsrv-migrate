@@ -2,6 +2,7 @@
 # Advanced mesh connectivity health checks for replication
 
 - name: Mesh Health | Comprehensive connectivity validation
+  tags: [mesh_health, preflight]
   block:
     - name: Mesh Health | Validate all replication nodes are reachable
       vars:
@@ -154,4 +155,4 @@
 
           💡 Fix the above issues and re-run the playbook.
 
-  tags: [mesh_health, preflight]
+  

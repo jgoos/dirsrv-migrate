@@ -69,6 +69,7 @@ mesh: repl_pod_mesh ## Configure mesh replication across lab
 verify: verify_389ds ## Verify example entries on consumer
 down: down_389ds ## Stop lab containers
 logs: bundle_logs ## Bundle logs and artifacts
+int: test_int ## Run INT flow with digest-pinned images
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
 ##@ 30 Compose/Lab
@@ -232,6 +233,9 @@ test_csr: ## End-to-end CSR test (generate + verify)
 down_389ds: ## Stop lab containers (compose down)
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down,compose_down)
 
+down_int: ## Stop INT lab containers (compose down)
+	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.int.yml down,compose_down_int)
+
 reset_389ds: ## Stop and purge lab compose stack; remove artifacts
 	$(MAKE) reset_hard PURGE=1
 	rm -rf .ansible/artifacts/compose-dev || true
@@ -261,6 +265,17 @@ test_repl_mesh:
 	@# Re-run mesh test with logging and bundle logs on failure (10 minute timeout)
 	ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds \
 		|| $(MAKE) bundle_logs
+
+##@ 65 INT Flow
+.PHONY: test_int
+test_int: ## Full INT flow with digest pinning; bundles artifacts before teardown
+	@set -e; \
+	ARGS_EXTRA=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true -e env_type=int"; \
+	$(MAKE) TEST_LOGS=1 ARGS+="$$ARGS_EXTRA" up_int init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds; \
+	RC=$$?; \
+	$(MAKE) bundle_logs; \
+	$(MAKE) down_int; \
+	exit $$RC
 
 # Idempotence: syntax check + two consecutive runs should result in 0 changes on second run
 .PHONY: test_repl_idempotent
@@ -364,11 +379,16 @@ bundle_logs: ## Bundle all artifacts and logs to a timestamped tarball
 
 # --- Ansible Collection build/install (directories.ds) ---
 
+up_int: net ## Start 2 suppliers + 2 consumers (INT, digest-pinned)
+	@# Require digest to be set to enforce immutability per INT policy
+	@: $${DS_IMAGE_DIGEST:?Set DS_IMAGE_DIGEST to a 389-DS image digest (sha256:...)}
+	$(call _time,DS_IMAGE_REF=quay.io/389ds/dirsrv@$(DS_IMAGE_DIGEST) $(COMPOSE_CMD) -f compose/podman-compose.389ds.int.yml up -d --no-recreate,compose_up_int)
+
 COLL_NS := directories
 COLL_NAME := ds
 COLL_DIR := collections/ansible_collections/$(COLL_NS)/$(COLL_NAME)
 
-.PHONY: collection_build collection_install
+.PHONY: collection_build collection_install collection_install_dev collection_install_user
 
 ##@ 100 Collections
 collection_build: ## Build directories.ds collection (tar.gz)
@@ -378,3 +398,13 @@ collection_install: collection_build ## Install built collection to .ansible/col
 	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
 	echo "Installing $$PKG to .ansible/collections"; \
 	ansible-galaxy collection install -p .ansible/collections --force "$$PKG"
+
+collection_install_dev: collection_build ## Install built collection to .ansible/collections (dev/local)
+	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
+	echo "Installing $$PKG to .ansible/collections"; \
+	ansible-galaxy collection install -p .ansible/collections --force "$$PKG"
+
+collection_install_user: collection_build ## Install built collection to ~/.ansible/collections (user)
+	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
+	echo "Installing $$PKG to ~/.ansible/collections"; \
+	ansible-galaxy collection install -p $$HOME/.ansible/collections --force "$$PKG"

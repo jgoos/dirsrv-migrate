@@ -10,7 +10,6 @@
       register: logdir
       changed_when: false
       failed_when: false
-
     - name: Fetch DS logs
       ansible.builtin.fetch:
         src: "{{ item }}"
@@ -23,4 +22,3 @@
         - "{{ (logdir.stdout | default('/var/log/dirsrv')) | trim }}/audit"
       changed_when: false
       failed_when: false
-

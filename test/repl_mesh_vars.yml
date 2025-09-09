@@ -39,20 +39,20 @@ dirsrv_repl_set_release_timeout: false
 dirsrv_repl_run_replcheck: false
 
 # Lab-only: avoid suffix-level referrals masking local state
-rhds_disable_referrals: true
+dirsrv_repl_disable_referrals: true
 
 # Enable post-enable verification in role (bind + config checks)
 dirsrv_repl_verify_post_enable: true
 
 # Tighter wait thresholds for fast lab runs
-rhds_repl_wait_stale_seconds: 30
-rhds_repl_wait_steady_ok_polls: 2
-rhds_repl_wait_delay: 1
-rhds_repl_wait_timeout: 120
-rhds_repl_wait_require_finished: true
-rhds_repl_wait_timeout_configured: 10
-rhds_repl_wait_timeout_start: 15
-rhds_repl_wait_timeout_done: 60
+dirsrv_repl_wait_stale_seconds: 30
+dirsrv_repl_wait_steady_ok_polls: 2
+dirsrv_repl_wait_delay: 1
+dirsrv_repl_wait_timeout: 120
+dirsrv_repl_wait_require_finished: true
+dirsrv_repl_wait_timeout_configured: 10
+dirsrv_repl_wait_timeout_start: 15
+dirsrv_repl_wait_timeout_done: 60
 
 # Override retry settings for faster test execution
 dirsrv_repl_retry_settings:

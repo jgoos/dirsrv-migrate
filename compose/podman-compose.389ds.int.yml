@@ -1,0 +1,73 @@
+version: "3.8"
+
+networks:
+  dsnet:
+    driver: bridge
+    name: dsnet
+
+services:
+  ds-s1:
+    image: ${DS_IMAGE_REF}
+    hostname: s1.dsnet.test
+    environment:
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
+    networks:
+      dsnet:
+        aliases: [s1.dsnet.test]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
+
+  ds-s2:
+    image: ${DS_IMAGE_REF}
+    hostname: s2.dsnet.test
+    environment:
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
+    networks:
+      dsnet:
+        aliases: [s2.dsnet.test]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
+
+  ds-c1:
+    image: ${DS_IMAGE_REF}
+    hostname: c1.dsnet.test
+    environment:
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
+    networks:
+      dsnet:
+        aliases: [c1.dsnet.test]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
+
+  ds-c2:
+    image: ${DS_IMAGE_REF}
+    hostname: c2.dsnet.test
+    environment:
+      - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
+      - DS_SUFFIX_NAME=dc=example,dc=com
+      - DS_PORT=389
+    networks:
+      dsnet:
+        aliases: [c2.dsnet.test]
+    healthcheck:
+      test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 50
+
+volumes: {}

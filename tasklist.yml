@@ -1,224 +1,129 @@
 ---
-# High-level simplification backlog derived from docs/Complexity_Audit_Ansible_Podman_389DS.md
-# Each task includes a precise goal, status, and an AI-oriented prompt
-# Follow repo guidelines in README.md and the Repository Guidelines provided.
+- id: 001
+  status: completed
+  prompt: |
+    Implement canonical hostname resolution and enforce it across replication.
+    - Add `dirsrv_target_type` default (`container`), and compute `dirsrv_advertised_hostname_final` following AGENTS.md priority:
+      1) `dirsrv_advertised_hostname` if defined;
+      2) if `dirsrv_target_type == 'container'` then `inventory_hostname` (Compose service name);
+      3) else `ansible_fqdn | default(inventory_hostname)`.
+    - In `roles/dirsrv_repl/tasks/agreements.yml`, use `dirsrv_advertised_hostname_final` for the consumer host when creating agreements instead of raw `target.host`.
+    - Add an assertion in preflight to forbid IP-literals and mixing service names with FQDNs in `dirsrv_repl_nodes`.
+    Files: `roles/dirsrv_repl/defaults/main.yml`, `roles/dirsrv_repl/tasks/main.yml` or `roles/dirsrv_common/tasks/preflight.yml`, `roles/dirsrv_repl/tasks/agreements.yml`.
+    Acceptance: Agreements list (`dsconf repl-agmt list`) shows only canonical names; asserts fail on IP addresses.
 
-tasks:
-  - id: T1-modules-only-repl
-    title: Use collection modules exclusively for replication
-    status: pending
-    prompt: |
-      Goal: Remove the dual implementation paths for replication and rely solely on the directories.ds modules.
+- id: 002
+  status: completed
+  prompt: |
+    Enforce no-restart contract for INT.
+    - Add `env_type` var (`dev`|`int`) and default `dirsrv_no_restart: "{{ env_type == 'int' }}"` in a central defaults file.
+    - Guard all restart/stop/start operations with `when: not dirsrv_no_restart` and emit a clear warning `debug: warn=true` when skipped.
+    - Affected tasks: TLS restart (`roles/dirsrv_tls/tasks/main.yml`), mapping-tree referral restart (`roles/dirsrv_repl/tasks/enable.yml`), suffix-disabled recovery restart (`roles/dirsrv_repl/tasks/error_recovery.yml`), and migrate target systemd restart (`roles/dirsrv_migrate/tasks/target.yml`).
+    Acceptance: Running with `-e env_type=int` results in zero restarts; tasks show skip warnings.
 
-      Scope:
-      - Replace all CLI/fallback code paths with module calls in the replication role.
-      - Remove the feature flag `dirsrv_repl_use_modules` and any conditional branching that falls back to `dsconf`/`ldap*` for agreements/init/wait.
+- id: 003
+  status: completed
+  prompt: |
+    Serialize initialization to avoid replica locks.
+    - Re-introduce `throttle: 1` on the `directories.ds.ds_repl_init` task in `roles/dirsrv_repl/tasks/agreements.yml`.
+    - Add a short comment explaining lock contention (UpdateInProgress/RUV) rationale per DESIGN.md.
+    Acceptance: Parallelism removed for init; repeated runs show no `UpdateInProgress` errors.
 
-      Files to change:
-      - roles/dirsrv_repl/tasks/agreements.yml
-      - roles/dirsrv_repl/tasks/init.yml
-      - roles/dirsrv_repl/tasks/wait_green.yml
-      - roles/dirsrv_repl/tasks/monitor.yml
-      - roles/dirsrv_repl/tasks/monitoring.yml
-      - roles/dirsrv_repl/defaults/main.yml
+- id: 004
+  status: completed
+  prompt: |
+    Standardize variable prefixes; deprecate `rhds_*`.
+    - Rename `rhds_disable_referrals` -> `dirsrv_repl_disable_referrals` across defaults, tasks, tests, and docs; remove any compatibility shims.
+    - Rename all `rhds_repl_wait_*` to `dirsrv_repl_wait_*`; update `roles/dirsrv_repl/tasks/wait_green.yml` references and test var files under `test/`.
+    - Update README/examples accordingly.
+    Acceptance: `rg -n "\brhds_"` returns no matches (excluding this tasklist).
 
-      Implementation details:
-      - Use `directories.ds.ds_repl_agreement` with `state: present` for creating/updating agreements.
-      - Use `directories.ds.ds_repl_init` to initialize agreements (no `--init` in create step).
-      - Use `directories.ds.ds_repl_wait` for health waits instead of parsing CLI.
-      - Strip out CLI-only snapshotting that is no longer applicable, leaving any existing debug snapshots gated behind `dirsrv_debug: true`.
-      - Ensure `no_log: true` where passwords/credentials are used.
+- id: 005
+  status: completed
+  prompt: |
+    Add INT-specific Compose and Make targets with pinned image digests and ephemeral storage.
+    - Create `compose/podman-compose.389ds.int.yml` that: uses `quay.io/389ds/dirsrv@sha256:<digest>`, replaces bind mounts with anonymous volumes/tmpfs, and keeps `dsnet`.
+    - Add Make targets: `up_int`, `test_int` mirroring DEV flow but using INT compose and exporting artifacts before teardown.
+    - Document digest override via env var (e.g., `DS_IMAGE_DIGEST`).
+    Acceptance: `make up_int` starts containers with digest-pinned images and no bind mounts; `make test_int` runs end-to-end and bundles artifacts before down.
 
-      Acceptance criteria:
-      - `ansible-playbook --syntax-check site.yml` passes.
-      - `rg -n "dsconf|ldapsearch|ldapwhoami" roles/dirsrv_repl` returns no hits in the modified tasks above (exceptions allowed in enable/tuning if still needed).
-      - Running `ansible-playbook -i inventory.yml repl_mesh.yml --check` completes planning without errors on an existing lab.
+- id: 006
+  status: completed
+  prompt: |
+    Validate node hostnames; forbid IP literals and mixed addressing.
+    - In `roles/dirsrv_common/tasks/preflight.yml`, add asserts that:
+      - `dirsrv_repl_nodes[host].host` is not an IPv4/IPv6 literal;
+      - For `dirsrv_target_type == 'container'`, host is a Compose service name (no dots) or `*.dsnet.test`;
+      - For VMs, require FQDNs (no short names) and not under `dsnet.test`.
+    - Fail fast with actionable messages.
+    Acceptance: Misconfigured inventories fail with clear preflight errors.
 
-  - id: T2-dns-preflight
-    title: Replace /etc/hosts hacks with DNS preflight gating
-    status: pending
-    prompt: |
-      Goal: Eliminate dynamic /etc/hosts edits and fail fast when DNS is misconfigured.
+- id: 007
+  status: completed
+  prompt: |
+    Scope heavy container network preflight to containers only and make it toggleable.
+    - Add `dirsrv_network_validate: true` default; wrap Podman network inspection and `/etc/hosts` conflict checks with `when: dirsrv_network_validate and dirsrv_target_type == 'container'`.
+    - Reduce inline Python by extracting small checks to Jinja/Ansible where practical; keep `argv` and `changed_when: false` everywhere.
+    Acceptance: On VMs, preflight skips container-only checks; behavior controlled by `dirsrv_network_validate`.
 
-      Scope:
-      - Remove the DNS resolution hack that appends to /etc/hosts from the replication role.
-      - Add deterministic DNS and TCP connectivity checks to preflight and abort if unresolved.
+- id: 008
+  status: completed
+  prompt: |
+    Remove dead Python helper `roles/dirsrv_repl/library/retry_utils.py` and any unused references.
+    - Delete the file and ensure no tasks/imports reference it.
+    Acceptance: File removed; repo greps show no usage.
 
-      Files to change:
-      - roles/dirsrv_repl/tasks/error_recovery.yml (remove the entire "Handle DNS resolution failures" block)
-      - roles/dirsrv_common/tasks/preflight.yml (add DNS and port checks for all agreement targets)
+- id: 009
+  status: completed
+  prompt: |
+    Implement and use `dirsrv_advertised_hostname_final` in replication modules’ inputs.
+    - In `roles/dirsrv_repl/tasks/agreements.yml`, compute `target_host_effective` per agreement using the canonical resolution and pass that to `directories.ds.ds_repl_agreement.consumer_host`.
+    - Ensure monitoring and wait tasks display canonical names in summaries.
+    Acceptance: Module snapshots and debug output show only canonical names.
 
-      Implementation details:
-      - In preflight, for each agreement target (from `dirsrv_repl_agreements`), run a `getent hosts <name>` and assert rc == 0.
-      - Optionally use `ansible.builtin.wait_for` with `host` and `port` for quick TCP gating (short timeout, non-destructive).
-      - Provide a concise fail_msg guiding the operator to fix Podman DNS/network.
-      - Do not modify /etc/hosts under any circumstance.
+- id: 010
+  status: completed
+  prompt: |
+    Tighten secret handling and logging hygiene.
+    - Ensure all tasks that pass `-w {{ dirsrv_password }}` or `--bind-passwd` have `no_log: true` (or redaction logic) consistently.
+    - Audit `roles/dirsrv_repl/tasks/*` and `roles/dirsrv_migrate/tasks/*` for any misses; add explicit `changed_when/failed_when` where missing.
+    Acceptance: No CLI secrets appear in Ansible JSON logs when `dirsrv_debug=false`.
 
-      Acceptance criteria:
-      - `rg -n "lineinfile:.*\/etc\/hosts" roles/dirsrv_repl/tasks/error_recovery.yml` returns no matches.
-      - Broken DNS results in a clear assert failure during preflight, before any replication changes.
+- id: 011
+  status: completed
+  prompt: |
+    Collections workflow targets parity with policy.
+    - Add `make collection_install_dev` (installs to `.ansible/collections`) and `make collection_install_user` (installs to `~/.ansible/collections`) as thin wrappers; keep existing `collection_build` intact.
+    - Update README snippet if present.
+    Acceptance: Both new targets run successfully and install the latest built tarball.
 
-  - id: T3-remove-backend-create-from-repl
-    title: Remove suffix/backend creation from replication role; assert existence instead
-    status: pending
-    prompt: |
-      Goal: Replication role should not create or modify backends/suffix mapping trees.
+- id: 012
+  status: completed
+  prompt: |
+    Strengthen INT acceptance gates and timeouts.
+    - Wire `dirsrv_repl_wait_*` (post-rename) defaults to align with DESIGN.md SLAs; fail the play if steady-state not reached within configured time.
+    - Add an early assert that `ansible_date_time.tz` and NTP service (chronyd/ntpd/timesyncd) are sane with `warn` and explicit failure option for INT.
+    Acceptance: INT runs halt on SLA breaches; logs include clear failure reasons.
 
-      Scope:
-      - Delete the task block in `roles/dirsrv_repl/tasks/enable.yml` that creates backends/mapping trees.
-      - Replace with a lightweight, read-only assert that the suffix exists and replication can be enabled.
+- id: 013
+  status: completed
+  prompt: |
+    Ensure agreements initialization is serialized per suffix.
+    - In addition to `throttle: 1`, group init per-suffix and run supplier→consumer `init: true` items one at a time with a small inter-init delay (`pause: seconds=2`) to avoid RUV contention.
+    Acceptance: No contention warnings when initializing multiple consumers.
 
-      Files to change:
-      - roles/dirsrv_repl/tasks/enable.yml
+- id: 014
+  status: pending
+  prompt: |
+    Provide a compatibility shim for existing inventories and tests.
+    - After introducing canonical hostnames and var renames, add temporary compatibility in defaults to map old var names to new, with a `debug: warn=true` deprecation notice.
+    - Add a `docs/VARIABLES_AND_COMPATIBILITY.md` update snippet to reflect the change window.
+    Acceptance: Existing `test/*` continues to pass without immediate var churn; warnings guide migration.
 
-      Implementation details:
-      - Remove the "Enable | Ensure suffix mapping tree exists (safe)" task that runs `dsconf ... backend create`.
-      - Add a read-only check: either `directories.ds.ds_repl_enable` in check_mode or a `dsconf -j replication get --suffix <DN>` gated by `changed_when: false` and `failed_when: false`, then assert on expected markers.
-      - Provide actionable `fail_msg` telling the operator to ensure the suffix is created by migrate flows.
-
-      Acceptance criteria:
-      - Replication role no longer runs `backend create`.
-      - Failing precondition produces a clear error without side effects.
-
-  - id: T4-simplify-init-orchestration
-    title: Simplify init ordering; remove primary-supplier state machine
-    status: pending
-    prompt: |
-      Goal: Reduce orchestration complexity by removing implicit state for primary supplier and bidirectional init pairing.
-
-      Scope:
-      - Remove the blocks in `roles/dirsrv_repl/tasks/main.yml` that compute `dirsrv_repl_init_pairs` and the "Mesh | Identify primary supplier" logic.
-      - Enforce serialized initialization using Ansible mechanisms instead of per-host state machines.
-
-      Files to change:
-      - roles/dirsrv_repl/tasks/main.yml
-      - repl_mesh.yml (add `serial: 1` at the play level)
-
-      Implementation details:
-      - Delete the `set_fact` blocks that compute pairs and the `assert` that blocks bidirectional init.
-      - Add `throttle: 1` to the tasks that perform `directories.ds.ds_repl_init` (and, if helpful, agreement creation) to avoid concurrency.
-      - In `repl_mesh.yml`, set `serial: 1` to sequence hosts for init operations.
-      - Keep any straightforward waits, but avoid deriving implicit primaries from facts.
-
-      Acceptance criteria:
-      - The main tasks no longer set/consume `dirsrv_repl_init_pairs` or `dirsrv_repl_primary_supplier`.
-      - `repl_mesh.yml` includes `serial: 1` and a run converges without race conditions.
-
-  - id: T5-slim-health-checks
-    title: Slim replication health_checks.yml to essentials
-    status: pending
-    prompt: |
-      Goal: Keep only high-signal checks in health_checks.yml and move environment checks to preflight.
-
-      Scope:
-      - Retain: variable validation, LDAPI readiness, minimal remote connectivity ping.
-      - Remove or migrate: time sync warnings, extensive final verification, mesh topology counters.
-
-      Files to change:
-      - roles/dirsrv_repl/tasks/health_checks.yml
-      - roles/dirsrv_common/tasks/preflight.yml (move time sync check here)
-
-      Implementation details:
-      - Cut back the remote connectivity loop; rely on preflight (T2) to gate DNS/TCP.
-      - Keep a single LDAPI EXTERNAL base search as a readiness check.
-      - Remove the heavy "Post-operation verification" block; rely on `wait_green.yml` and `ds_repl_wait` for convergence.
-
-      Acceptance criteria:
-      - health_checks.yml is under ~150 lines and contains no DST state machine logic.
-      - Most environment assertions appear in preflight instead.
-
-  - id: T6-repl-teardown
-    title: Add replication teardown tasks and a playbook
-    status: pending
-    prompt: |
-      Goal: Provide a clean rollback path that removes agreements and disables replication when needed.
-
-      Scope:
-      - New task file `roles/dirsrv_repl/tasks/teardown.yml` to remove agreements using `directories.ds.ds_repl_agreement: state=absent`.
-      - New top-level playbook `replication_teardown.yml` that runs teardown across the inventory.
-
-      Implementation details:
-      - Iterate over `dirsrv_repl_agreements` and call `ds_repl_agreement: state=absent` for each local-from agreement.
-      - Optionally add a final `dsconf replication set --suffix ... --replica-enabled off` per suffix if supported (best-effort, guarded by `changed_when: result.rc == 0`, `failed_when: false`).
-      - Ensure idempotence and `no_log: true` where needed.
-
-      Acceptance criteria:
-      - `ansible-playbook --syntax-check replication_teardown.yml` passes.
-      - Re-running teardown is idempotent (no changes on second run).
-
-  - id: T7-defaults-cleanup
-    title: Remove dirsrv_repl_use_modules and align defaults
-    status: pending
-    prompt: |
-      Goal: Drop the feature flag now that modules are the only path and prune unused defaults.
-
-      Files to change:
-      - roles/dirsrv_repl/defaults/main.yml
-
-      Implementation details:
-      - Remove `dirsrv_repl_use_modules` and any comments instructing toggling paths.
-      - Ensure remaining defaults still align with variables guidelines (lower_snake_case, `dirsrv_*` prefix).
-
-      Acceptance criteria:
-      - No references to `dirsrv_repl_use_modules` remain in repo.
-
-  - id: T8-docs-refresh
-    title: Refresh docs to reflect simplified replication flow
-    status: pending
-    prompt: |
-      Goal: Update design and README docs to document the simplified, module-only flow and preflight gates.
-
-      Files to change:
-      - docs/REPLICATION_DESIGN.md
-      - docs/REPLICATION_LAB.md
-      - docs/MODULE_SPECS.md
-      - README.md
-
-      Implementation details:
-      - Remove references to CLI fallbacks and /etc/hosts edits.
-      - Document preflight DNS/TCP checks and failure modes.
-      - Show example play invocations (`--check`, `--diff`, vault usage) per repository policy.
-
-      Acceptance criteria:
-      - Docs build cleanly (markdown lints pass if configured) and reflect current variables and flow.
-
-  - id: T9-check-mode-audit
-    title: Ensure check-mode safety and explicit changed_when/failed_when
-    status: pending
-    prompt: |
-      Goal: Reconfirm that destructive operations are guarded in check-mode and commands have explicit result gating.
-
-      Scope:
-      - Audit `roles/dirsrv_repl/tasks/*.yml` and ensure tasks that change state are skipped under `ansible_check_mode`.
-      - Verify all `command`/`shell` tasks use `changed_when` and `failed_when` appropriately.
-
-      Files to review:
-      - roles/dirsrv_repl/tasks/enable.yml
-      - roles/dirsrv_repl/tasks/agreements.yml
-      - roles/dirsrv_repl/tasks/init.yml
-      - roles/dirsrv_repl/tasks/wait_green.yml
-      - roles/dirsrv_repl/tasks/monitor.yml
-      - roles/dirsrv_repl/tasks/monitoring.yml
-
-      Acceptance criteria:
-      - `ansible-playbook -i inventory.yml repl_mesh.yml --check` performs no changes and surfaces clear gating messages when preconditions fail.
-
-  - id: T10-idempotence-and-ci
-    title: Add idempotence check target and tighten lint/test flows
-    status: pending
-    prompt: |
-      Goal: Provide a one-shot target to run lint, syntax-check, and double-run idempotence for the replication flows.
-
-      Files to change:
-      - Makefile
-      - test/repl_mesh.yml (ensure it reflects current defaults)
-
-      Implementation details:
-      - Add a `test_repl_idempotent` make target that runs:
-        1) `ansible-playbook --syntax-check repl_mesh.yml`
-        2) `ansible-playbook -i inventory.yml repl_mesh.yml -e dirsrv_debug=false`
-        3) Re-run step (2) and ensure no changes reported (grep summary).
-      - Ensure `ansible-lint` and `yamllint .` targets exist or are optional if tools not installed.
-
-      Acceptance criteria:
-      - `make test_repl_idempotent` completes and second run shows 0 changed.
+- id: 015
+  status: completed
+  prompt: |
+    Add IP-literal guardrails to agreements data.
+    - Add an `assert` in `roles/dirsrv_repl/tasks/agreements.yml` verifying `dirsrv_repl_nodes[*].host` does not match IPv4/IPv6 literal regex and is a resolvable name.
+    - Include actionable `fail_msg` per AGENTS.md.
+    Acceptance: Bad inputs fail fast with clear messages.

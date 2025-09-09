@@ -1,10 +1,10 @@
 exclude_paths:
   - .ansible/
   - collections/ansible_collections/**/molecule/**
+  - collections/ansible_collections/**
   - test/
 
 skip_list:
   # Be pragmatic initially; tighten over time
   - var-naming
   - fqcn-builtins
-

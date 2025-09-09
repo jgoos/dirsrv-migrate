@@ -1,5 +1,0 @@
-diff a/docs/REPLICATION_LAB.md b/docs/REPLICATION_LAB.md	(rejected hunks)
-@@ -30,2 +30 @@ Troubleshooting
--- If dsconf can’t find the suffix on a consumer, the role will ensure it before enabling replication.
--
-+- Suffixes must exist before enabling replication. The replication role asserts presence and will fail fast if a suffix is missing; create it during migration/seed steps.

@@ -20,7 +20,7 @@
 
 - name: Generate CSR with dsctl (if supported)
   ansible.builtin.command:
-    argv: "{{ [ dirsrv_dsctl_bin, dirsrv_csr_instance, 'tls', 'generate-server-cert-csr', '-s', dirsrv_csr_subject ] + (dirsrv_csr_dns_sans | default([])) }}"
+    argv: "{{ [dirsrv_dsctl_bin, dirsrv_csr_instance, 'tls', 'generate-server-cert-csr', '-s', dirsrv_csr_subject] + (dirsrv_csr_dns_sans | default([])) }}"
   register: _dsctl_gen
   changed_when: true
   failed_when: _dsctl_gen.rc != 0
@@ -86,16 +86,7 @@
 
 - name: Append result for instance (dsctl)
   ansible.builtin.set_fact:
-    dirsrv_csr_results: "{{ (dirsrv_csr_results | default([])) + [ {
-      'cn': inventory_hostname,
-      'sans': { 'dns': dirsrv_csr_dns_sans | default([]), 'ip': dirsrv_csr_ip_sans | default([]) },
-      'instance': dirsrv_csr_instance,
-      'tool': 'dsctl',
-      'tool_path': dirsrv_dsctl_bin,
-      'sha256': _csr_stat_post.stat.checksum | default(''),
-      'generated_at': ansible_date_time.iso8601 | default(''),
-      'csr_path': dirsrv_csr_csr_path
-    } ] }}"
+    dirsrv_csr_results: "{{ (dirsrv_csr_results | default([])) + [{'cn': inventory_hostname, 'sans': {'dns': dirsrv_csr_dns_sans | default([]), 'ip': dirsrv_csr_ip_sans | default([])}, 'instance': dirsrv_csr_instance, 'tool': 'dsctl', 'tool_path': dirsrv_dsctl_bin, 'sha256': _csr_stat_post.stat.checksum | default(''), 'generated_at': ansible_date_time.iso8601 | default(''), 'csr_path': dirsrv_csr_csr_path}] }}"
   when: (_dsctl_csr_help.rc | default(1)) == 0
   tags: [tls, csr, artifacts]
 

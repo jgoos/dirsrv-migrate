@@ -8,7 +8,6 @@ networks:
 services:
   ds-s1:
     image: quay.io/389ds/dirsrv:latest
-    container_name: ds-s1
     hostname: s1.dsnet.test
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
@@ -16,7 +15,7 @@ services:
       - DS_PORT=389
     networks:
       dsnet:
-        aliases: [ds-s1, s1.dsnet.test]
+        aliases: [s1.dsnet.test]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
@@ -45,7 +44,6 @@ services:
 
   ds-s2:
     image: quay.io/389ds/dirsrv:latest
-    container_name: ds-s2
     hostname: s2.dsnet.test
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
@@ -53,7 +51,7 @@ services:
       - DS_PORT=389
     networks:
       dsnet:
-        aliases: [ds-s2, s2.dsnet.test]
+        aliases: [s2.dsnet.test]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
@@ -78,7 +76,6 @@ services:
 
   ds-c1:
     image: quay.io/389ds/dirsrv:latest
-    container_name: ds-c1
     hostname: c1.dsnet.test
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
@@ -86,7 +83,7 @@ services:
       - DS_PORT=389
     networks:
       dsnet:
-        aliases: [ds-c1, c1.dsnet.test]
+        aliases: [c1.dsnet.test]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
@@ -111,7 +108,6 @@ services:
 
   ds-c2:
     image: quay.io/389ds/dirsrv:latest
-    container_name: ds-c2
     hostname: c2.dsnet.test
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
@@ -119,7 +115,7 @@ services:
       - DS_PORT=389
     networks:
       dsnet:
-        aliases: [ds-c2, c2.dsnet.test]
+        aliases: [c2.dsnet.test]
     healthcheck:
       test: ["CMD-SHELL", "ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' 1.1 >/dev/null || exit 1"]
       interval: 5s
