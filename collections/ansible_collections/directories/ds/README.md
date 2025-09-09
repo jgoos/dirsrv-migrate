@@ -37,17 +37,25 @@ Examples (lab topology)
       bind_dn: "cn=Directory Manager"
       bind_pw: "{{ dirsrv_password }}"   # from Vault
 
-- Wait for health of all agreements on this supplier (staleness gating):
+- Wait for health of all agreements on this supplier (staleness + phased gating for tiny datasets):
 
   - name: Wait until agreements are healthy
     directories.ds.ds_repl_wait:
       instance: "localhost"
       suffix: "dc=example,dc=com"
       all: true
-      stale_seconds: 300
-      steady_ok_polls: 3
-      poll_interval: 10
-      timeout: 900
+      stale_seconds: 60
+      steady_ok_polls: 2
+      poll_interval: 2
+      timeout: 240
+      require:
+        configured: true
+        working: true
+        finished: true
+      timeouts:
+        configured: 20
+        start: 30
+        done: 120
 
 - Gather facts for dashboards:
 
@@ -66,12 +74,11 @@ Security Notes
 - For client-auth (mTLS), set `tls_client_cert`/`tls_client_key` and optionally `tls_ca`.
 
 Health Semantics (ds_repl_wait)
-- Replica enabled (`nsds5ReplicaEnabled` on supplier replica).
-- Last update status code equals 0.
-- Last update end time not stale (> `stale_seconds` is considered unhealthy).
-- If `require_init_success` is true (default), last init status code equals 0 when present.
+- Configured: agreement exists and is enabled.
+- Working: any of busy=true, monotonic update timestamps, or recent success within `stale_seconds`.
+- Finished: not busy, init success (if required), and all recent successes; if monitor backlog is available, backlog must be 0.
+- Phased gating (optional): `require` + `timeouts` let you fail fast on tiny datasets.
 
 Cross-links
 - Repo design: docs/DESIGN.md
 - Module specs: docs/MODULE_SPECS.md
-

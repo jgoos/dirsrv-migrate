@@ -91,8 +91,9 @@ Auth Modes
 
 
 Monitoring
-- `dsconf replication monitor` snapshot is printed.
-- For each local agreement, `repl-agmt status` is run.
+- Modules-first: `directories.ds.ds_repl_info` returns structured facts and a summary.
+- Waits: `directories.ds.ds_repl_wait` performs phased gating (`require` + `timeouts`) and trend sampling for fast, deterministic outcomes.
+- Optional: best-effort `dsconf -j replication monitor` sampling enriches observations with per-agreement backlog; when available, `ds_repl_wait` also requires backlog==0 for "finished".
 - Optional `ds-replcheck` supports `state|online|offline` modes and prints results.
 
 
