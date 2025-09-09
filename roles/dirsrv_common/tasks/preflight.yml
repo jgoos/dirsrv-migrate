@@ -116,6 +116,7 @@
   tags: [preflight]
 
 # DNS/TCP gating for replication targets (runs when replication topology data present)
+- name: Preflight | Collect replication targets
   ansible.builtin.set_fact:
     __dirsrv_unique_targets: "{{ (
         dirsrv_repl_agreements | default({})
