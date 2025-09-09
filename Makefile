@@ -2,12 +2,12 @@ SHELL := /bin/bash
 # Prefer native `podman compose`; fallback to podman-compose if needed.
 # This improves stability and avoids wrapper flakiness.
 COMPOSE_CMD := $(shell podman compose help >/dev/null 2>&1 && echo podman compose || (command -v podman-compose >/dev/null 2>&1 && echo podman-compose || echo podman compose))
-.DEFAULT_GOAL := test_389ds
+.DEFAULT_GOAL := help
 
 # Timing helper and lab params
 .SHELLFLAGS := -eu -o pipefail -c
 define _time
-	@start=$$(date +%s); \
+	start=$$(date +%s); \
 	{ $(1) ; }; \
 	rc=$$?; end=$$(date +%s); \
 	echo "[TIMING] $(2): $$((end-start))s (rc=$$rc)"; \
@@ -16,6 +16,18 @@ endef
 
 DS_IMAGE := quay.io/389ds/dirsrv:latest
 NET_NAME := dsnet
+
+# Lab env defaults (can be overridden via environment)
+DIRSRV_PASSWORD ?= password
+DSNET_S1_IP ?= 10.89.1.6
+DSNET_S2_IP ?= 10.89.1.8
+DSNET_C1_IP ?= 10.89.1.4
+DSNET_C2_IP ?= 10.89.1.5
+
+export DIRSRV_PASSWORD DSNET_S1_IP DSNET_S2_IP DSNET_C1_IP DSNET_C2_IP
+
+# Common service list for loops
+SERVICES := ds-s1 ds-s2 ds-c1 ds-c2
 
 # Test logging env (enabled when TEST_LOGS=1)
 ANSIBLE_TEST_ENV := ANSIBLE_STDOUT_CALLBACK=json ANSIBLE_CALLBACKS_ENABLED=log_plays,profile_tasks ANSIBLE_LOG_PATH=.ansible/test_logs/ansible-run.log
@@ -26,78 +38,64 @@ ANSIBLE_TEST_ENV := ANSIBLE_STDOUT_CALLBACK=json ANSIBLE_CALLBACKS_ENABLED=log_p
 
 .PHONY: migrate help \
 	up_389ds init_389ds seed_389ds migrate_pod deps_podman test_389ds verify_389ds down_389ds reset_389ds \
-	clean clean_dry test_ldif_filter csr_pod verify_csr test_csr \
-	collection_build collection_install collection_install_dev collection_install_user
+	test_ldif_filter csr_pod verify_csr test_csr \
+	collection_build collection_install
 
 # Additional CSR scenarios
 .PHONY: csr_pod_multi verify_csr_multi test_csr_edges
 
+##@ Migration
 # Default migrate uses Podman connection (no sshpass/SSH required)
-migrate: deps_podman
+migrate: deps_podman ## Run migration playbook against compose lab (use ARGS for --check)
 	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_mapping.yml \
 	  -e @test/compose_vars.yml \
 	  site.yml $(ARGS)
 
-help:
-	@echo "Targets: migrate [ARGS=--check], up_389ds, init_389ds, seed_389ds, migrate_pod, repl_pod, verify_389ds, deps_podman, test_389ds, test_ldif_filter, test_repl, test_repl_mesh, test_csr, down_389ds, reset_389ds"
-	@echo "         collection_build, collection_install_dev, collection_install_user"
-	@echo "         clean (git clean -fdx with CONFIRM=1), clean_dry"
-	@echo "         test_repl_idempotent (syntax + double-run, expects lab inventory)"
+##@ 10 Quickstart
+help: ## Show this help (grouped, sorted by section and target)
+	@echo "Usage: make <target> [ARGS=' ... ']"; echo; \
+	awk 'BEGIN{FS=":.*##"; sec="Misc"} \
+	     /^##@/ {sec=$$0; sub(/^##@\s*/,"",sec); s=sec; sub(/^ *[0-9]+ +/, "", s); sec=s; print sec "|__SECTION__|"; next} \
+	     /^[A-Za-z0-9_.-]+:.*##/ {gsub(/^ +| +$$/,"",$$1); gsub(/^ +| +$$/,"",$$2); print sec "|" $$1 "|" $$2 }' $(MAKEFILE_LIST) \
+	| sort -t '|' -k1,1 -k2,2 \
+	| awk -F '|' 'BEGIN{first=1} { if ($$2=="__SECTION__") { if (!first) printf("\n"); print $$1; first=0; } else { printf("  %-28s %s\n", $$2, $$3) } }'
 
-# Design-aligned aliases
+##@ 20 Aliases
 .PHONY: up mesh verify down logs
-up: up_389ds init_389ds
-mesh: repl_pod_mesh
-verify: verify_389ds
-down: down_389ds
-logs: bundle_logs
+up: up_389ds init_389ds ## Start lab containers and wait for readiness
+mesh: repl_pod_mesh ## Configure mesh replication across lab
+verify: verify_389ds ## Verify example entries on consumer
+down: down_389ds ## Stop lab containers
+logs: bundle_logs ## Bundle logs and artifacts
 
 # 389-DS prebuilt image workflow (no systemd/SSH)
-pull_if_needed: .stamps/pull
-.stamps/pull:
-	@mkdir -p .stamps
-	@podman image exists $(DS_IMAGE) >/dev/null 2>&1 || podman pull $(DS_IMAGE)
-	@touch $@
+##@ 30 Compose/Lab
 
-net: .stamps/net
+net: .stamps/net ## Ensure lab network exists
 .stamps/net:
 	@mkdir -p .stamps
 	@podman network inspect $(NET_NAME) >/dev/null 2>&1 || podman network create $(NET_NAME)
 	@touch $@
 
-up_389ds: pull_if_needed net
-	@# Ensure host log dirs for bind mounts (test-only; harmless if unused)
+.PHONY: prepare_host_dirs
+prepare_host_dirs:
+	@# Ensure host log dirs for bind mounts (harmless if unused)
 	@mkdir -p .ansible/test_logs
-	@for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
+	@for svc in $(SERVICES); do \
 	  mkdir -p \
 	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost \
 	    .ansible/containers/$$svc/var-lib-dirsrv-slapd-localhost \
 	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost-certs \
 	    .ansible/containers/$$svc/var-log-dirsrv-slapd-localhost; \
 	done
-	@# Set default environment variables for compose
-	@export DIRSRV_PASSWORD=$${DIRSRV_PASSWORD:-password}; \
-	export DSNET_S1_IP=$${DSNET_S1_IP:-10.89.1.6}; \
-	export DSNET_S2_IP=$${DSNET_S2_IP:-10.89.1.8}; \
-	export DSNET_C1_IP=$${DSNET_C1_IP:-10.89.1.4}; \
-	export DSNET_C2_IP=$${DSNET_C2_IP:-10.89.1.5}; \
+
+up_389ds: net prepare_host_dirs ## Start 2 suppliers + 2 consumers (detached)
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up)
 
-up_389ds_fast: net
-	@# Ensure host log dirs for bind mounts (test-only; harmless if unused)
-	@mkdir -p .ansible/test_logs
-	@for svc in ds-s1 ds-s2 ds-c1 ds-c2; do \
-	  mkdir -p \
-	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost \
-	    .ansible/containers/$$svc/var-lib-dirsrv-slapd-localhost \
-	    .ansible/containers/$$svc/etc-dirsrv-slapd-localhost-certs \
-	    .ansible/containers/$$svc/var-log-dirsrv-slapd-localhost; \
-	done
-	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up_fast)
 
-init_389ds:
+init_389ds: ## Wait for LDAPI readiness on ds-s1 and ds-c1
 	@echo "Waiting for LDAP (ldapi) on ds-s1 and ds-c1..."
 	@ready_s1=1; for i in $$(seq 1 60); do \
 	  podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -s base -b '' '(objectClass=*)' >/dev/null 2>&1 && { ready_s1=0; break; }; \
@@ -110,14 +108,14 @@ init_389ds:
 	done; \
 	if [ $$ready_c1 -ne 0 ]; then echo "ldapi not ready on ds-c1" >&2; exit 1; fi
 
-seed_389ds: deps_podman
+seed_389ds: deps_podman ## Seed example data on supplier (idempotent)
 	@echo "Seeding example data on ds-s1 via Ansible"
 	$(call _time,$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_vars.yml \
 	  test/seed.yml $(ARGS),seed)
 
-migrate_pod:
+migrate_pod: ## Run migration play against Podman inventory
 	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_mapping.yml \
@@ -125,6 +123,15 @@ migrate_pod:
 	  site.yml $(ARGS)
 
 # Run replication role against compose lab
+##@ 40 Replication
+# Simple, user-facing aliases
+repl: ## Replicate single link (s1 -> c1): up, init, deps, seed, configure, verify
+	$(MAKE) test_repl $(ARGS)
+
+repl_mesh: ## Replicate full mesh across s1,s2,c1,c2
+	$(MAKE) test_repl_mesh $(ARGS)
+
+# Internal step used by tests (hidden from help)
 repl_pod:
 	$(call _time,$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
@@ -141,16 +148,18 @@ verify_389ds:
 	verify "app-x present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=app-x' | grep -q 'uid=app-x'"; \
 	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -LLL -s base -b dc=example,dc=com aci || ldapsearch -x -H ldap://localhost:389 -LLL -s base -b dc=example,dc=com aci' | grep -iq '^aci:'"
 
-deps_podman:
+##@ 50 Dependencies
+deps_podman: ## Install required Ansible collections (from requirements)
 	ansible-galaxy collection install -r collections/requirements.yml
 
-test_389ds:
+##@ 60 Tests
+test_389ds: ## Full migrate flow (up, init, deps, seed, migrate, verify)
 	@# Re-run the pipeline with test logging enabled and bundle logs on failure
 	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds deps_podman seed_389ds migrate_pod verify_389ds \
 		|| $(MAKE) bundle_logs
 
 # Exercise LDIF split/filter module and verify artifacts on controller
-test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds
+test_ldif_filter: up_389ds init_389ds deps_podman seed_389ds ## Exercise LDIF split/filter and validate artifacts
 	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_mapping.yml \
@@ -187,7 +196,8 @@ test_repl_mesh_robust:
 	@echo "=== Robust mesh test completed ==="
 
 # Run CSR role against compose lab
-csr_pod:
+##@ 70 TLS/CSR
+csr_pod: ## Run CSR role to generate CSRs in lab
 	$(if $(TEST_LOGS),$(ANSIBLE_TEST_ENV),) ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_vars.yml \
@@ -195,7 +205,7 @@ csr_pod:
 	  test/csr.yml $(ARGS)
 
 # Verify CSR artifacts on controller
-verify_csr:
+verify_csr: ## Verify generated CSR artifacts and manifests
 	@set -e; \
 	ART_DIR_BASE="$(PWD)/.ansible/artifacts/tls"; \
 	S1_DIR="$$ART_DIR_BASE/ds-s1"; \
@@ -213,46 +223,22 @@ verify_csr:
 	echo "OK: CSR artifacts and manifests look sane"
 
 # End-to-end CSR test
-test_csr:
+test_csr: ## End-to-end CSR test (generate + verify)
 	@# Re-run CSR test with logging and bundle logs on failure
 	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds deps_podman csr_pod verify_csr \
 		|| $(MAKE) bundle_logs
 
-down_389ds:
-	@# Set default environment variables for compose
-	@export DIRSRV_PASSWORD=$${DIRSRV_PASSWORD:-password}; \
-	export DSNET_S1_IP=$${DSNET_S1_IP:-10.89.1.6}; \
-	export DSNET_S2_IP=$${DSNET_S2_IP:-10.89.1.8}; \
-	export DSNET_C1_IP=$${DSNET_C1_IP:-10.89.1.4}; \
-	export DSNET_C2_IP=$${DSNET_C2_IP:-10.89.1.5}; \
+##@ 80 Cleanup
+down_389ds: ## Stop lab containers (compose down)
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down,compose_down)
 
-reset_389ds:
-	@# Set default environment variables for compose
-	@export DIRSRV_PASSWORD=$${DIRSRV_PASSWORD:-password}; \
-	export DSNET_S1_IP=$${DSNET_S1_IP:-10.89.1.6}; \
-	export DSNET_S2_IP=$${DSNET_S2_IP:-10.89.1.8}; \
-	export DSNET_C1_IP=$${DSNET_C1_IP:-10.89.1.4}; \
-	export DSNET_C2_IP=$${DSNET_C2_IP:-10.89.1.5}; \
-	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v || true,compose_down_purge)
+reset_389ds: ## Stop and purge lab compose stack; remove artifacts
+	$(MAKE) reset_hard PURGE=1
 	rm -rf .ansible/artifacts/compose-dev || true
 
 # Show what would be removed (untracked + ignored files)
-clean_dry:
-	@echo "[dry-run] git clean -fdX -n (ignored files only)"
-	@git clean -fdX -n
-
-# Remove everything not tracked by git (DANGEROUS)
-# Usage: make clean CONFIRM=1
-clean:
-	@if [ "$(CONFIRM)" != "1" ]; then \
-	  echo "Refusing to delete without CONFIRM=1"; \
-	  echo "Run: make clean_dry   # to preview"; \
-	  echo "Run: make clean CONFIRM=1   # to delete"; \
-	  exit 2; \
-	fi
-	@echo "Cleaning ignored files only (safer): git clean -fdX"
-	@git clean -fdX
+##@ 90 Utilities
+## Removed dangerous clean targets (git clean). Prefer explicit purges: reset_389ds, reset_hard, bundle_logs.
 # Mesh replication test (2 suppliers, 2 consumers)
 
 init_389ds_mesh:
@@ -293,9 +279,9 @@ test_repl_idempotent: deps_podman
 	  echo "OK: idempotent (no changes on second run)"; \
 	fi
 # Fast mesh test: reuse containers, restore golden, run mesh only
-test_repl_mesh_fast: up_389ds_fast reset_soft repl_pod_mesh
+## fast mesh target removed (up_389ds_fast dropped)
 # Run CSR role for multi-instance scenario on ds-s1
-csr_pod_multi:
+csr_pod_multi: ## CSR role for multi-instance scenario on ds-s1
 	ANSIBLE_LOCAL_TEMP=.ansible/tmp ANSIBLE_REMOTE_TEMP=.ansible/tmp \
 	ansible-playbook -i test/inventory.compose.pod.yml \
 	  -e @test/compose_vars.yml \
@@ -303,7 +289,7 @@ csr_pod_multi:
 	  test/csr_multi.yml $(ARGS)
 
 # Verify multi-instance CSR artifacts
-verify_csr_multi:
+verify_csr_multi: ## Verify multi-instance CSR artifacts
 	@set -e; \
 	ART_DIR_BASE="$(PWD)/.ansible/artifacts/tls"; \
 	S1_DIR="$$ART_DIR_BASE/ds-s1"; \
@@ -314,10 +300,10 @@ verify_csr_multi:
 	echo "OK: multi-instance CSR artifacts present"
 
 # Aggregate CSR edge tests
-test_csr_edges: up_389ds init_389ds deps_podman csr_pod verify_csr csr_pod_multi verify_csr_multi
+test_csr_edges: up_389ds init_389ds deps_podman csr_pod verify_csr csr_pod_multi verify_csr_multi ## Aggregate CSR edge tests
 
 # Soft reset: restore from golden backups inside containers (fast)
-reset_soft:
+reset_soft: ## Restore golden backups inside containers (fast soft reset)
 	@echo "Soft reset: restoring golden backups (if missing, creating once)"
 	@for h in ds-s1 ds-s2 ds-c1 ds-c2; do \
 	  inst=localhost; bakroot="/var/lib/dirsrv/slapd-$$inst/bak"; bakdir="$$bakroot/golden"; \
@@ -335,7 +321,7 @@ reset_soft:
 	done
 
 # Hard reset: tear down containers; keep volumes unless PURGE=1
-reset_hard:
+reset_hard: ## Tear down containers; purge with PURGE=1
 	@if [ "$(PURGE)" = "1" ]; then \
 	  $(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v,down_purge); \
 	else \
@@ -343,10 +329,10 @@ reset_hard:
 	fi
 
 # Setup network only (no-op if exists)
-net_only: net
+net_only: net ## Ensure network exists (no containers)
 
 # Quick bench: up -> seed -> mesh -> down (timed)
-bench:
+bench: ## Quick bench: up -> seed -> mesh -> down (timed)
 	@echo "Running bench: up -> seed -> mesh -> down"
 	$(MAKE) up_389ds
 	$(MAKE) seed_389ds
@@ -355,7 +341,7 @@ bench:
 
 # Bundle all artifacts and logs for AI analysis
 .PHONY: bundle_logs
-bundle_logs:
+bundle_logs: ## Bundle all artifacts and logs to a timestamped tarball
 	@set -e; \
 	TS=$$(date +%Y%m%d-%H%M%S); \
 	mkdir -p .ansible/test_logs .ansible/artifacts .ansible/containers; \
@@ -382,20 +368,13 @@ COLL_NS := directories
 COLL_NAME := ds
 COLL_DIR := collections/ansible_collections/$(COLL_NS)/$(COLL_NAME)
 
-.PHONY: collection_build collection_install_dev collection_install_user collection_install
+.PHONY: collection_build collection_install
 
-collection_build:
+##@ 100 Collections
+collection_build: ## Build directories.ds collection (tar.gz)
 	$(call _time,cd $(COLL_DIR) && ansible-galaxy collection build -f,collection_build)
 
-collection_install_dev: collection_build
+collection_install: collection_build ## Install built collection to .ansible/collections (project-local)
 	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
-	echo "Installing $$PKG to .ansible/collections (dev path)"; \
+	echo "Installing $$PKG to .ansible/collections"; \
 	ansible-galaxy collection install -p .ansible/collections --force "$$PKG"
-
-collection_install_user: collection_build
-	@set -e; PKG=$$(ls -1t $(COLL_DIR)/*.tar.gz | head -1); \
-	echo "Installing $$PKG to user path (~/.ansible/collections)"; \
-	ansible-galaxy collection install --force "$$PKG"
-
-# Alias: default install goes to dev path to avoid touching user env implicitly
-collection_install: collection_install_dev
