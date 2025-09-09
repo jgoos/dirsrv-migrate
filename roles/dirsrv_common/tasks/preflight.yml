@@ -153,6 +153,9 @@
     port: "{{ target.port }}"
     timeout: 20
     sleep: 0
+  register: __dirsrv_tcp_check
+  changed_when: false
+  failed_when: false
   with_subelements:
     - "{{ dirsrv_repl_agreements | default({}) | dict2items }}"
     - value
