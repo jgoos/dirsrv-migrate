@@ -1,0 +1,14 @@
+---
+- name: Agreements | Initialize agreement (online)
+  directories.ds.ds_repl_init:
+    instance: "{{ dirsrv_repl_this_node.instance }}"
+    suffix: "{{ suffix }}"
+    agreement: "{{ agreement_name }}"
+    timeout: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | default(300) }}"
+    poll_interval: "{{ dirsrv_repl_retry_settings.base_delay | default(1) }}"
+
+- name: Agreements | Inter-init delay (avoid RUV lock contention)
+  ansible.builtin.pause:
+    seconds: "{{ dirsrv_repl_retry_settings.mesh_settings.agreement_serialization_delay | default(2) }}"
+  when: not (is_last | bool)
+

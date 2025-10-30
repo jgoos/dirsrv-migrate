@@ -1,0 +1,14 @@
+---
+- name: Agreements | Iterate agreements per suffix (include per-agreement tasks)
+  vars:
+    ags: "{{ group.value }}"
+    suffix: "{{ group.key }}"
+  ansible.builtin.include_tasks: agreements_init_one.yml
+  loop: "{{ ags | enumerate | list }}"
+  loop_control:
+    loop_var: pair
+  when:
+    - ags | length > 0
+  vars:
+    agreement_name: "{{ pair.1.name }}"
+    is_last: "{{ pair.0 >= (ags | length) - 1 }}"
