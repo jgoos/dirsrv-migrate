@@ -15,9 +15,7 @@
     that:
       - dirsrv_repl_nodes[item.1.to] is defined
     fail_msg: "Target host '{{ item.1.to }}' missing in dirsrv_repl_nodes"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
 
@@ -43,9 +41,7 @@
   changed_when: false
   failed_when: __agmt_host_guard.rc != 0
   register: __agmt_host_guard
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
     - dirsrv_require_dns_resolution | bool
@@ -82,9 +78,7 @@
     bind_method: "{{ dirsrv_repl_auth.method | lower }}"
     bind_dn: "{{ dirsrv_repl_auth.bind_dn }}"
     bind_pw: "{{ dirsrv_repl_auth.bind_password }}"
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
     - not ansible_check_mode
@@ -167,9 +161,7 @@
   ansible.builtin.debug:
     msg: "Schedule {{ dirsrv_repl_schedule }} may pause updates during initial sync for {{ item.1.name }}"
     warn: true
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
     - dirsrv_repl_schedule | length > 0
@@ -201,9 +193,7 @@
     )
   failed_when: dirsrv_repl_agmt_sched.rc != 0
   no_log: true
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
     - dirsrv_repl_schedule | length > 0
@@ -269,9 +259,7 @@
     )
   failed_when: dirsrv_repl_agmt_frac.rc != 0
   no_log: true
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
     - (dirsrv_repl_frac_list | length > 0) or (dirsrv_repl_frac_list_total | length > 0) or (dirsrv_repl_strip_list | length > 0)
@@ -317,9 +305,7 @@
     _dirsrv_init_groups: >-
       {{ (_dirsrv_init_groups | default({}))
          | combine({ item.0.key: (((_dirsrv_init_groups | default({})).get(item.0.key, [])) + [ item.1 ]) }, recursive=True) }}
-  with_subelements:
-    - "{{ dirsrv_repl_agreements | dict2items }}"
-    - value
+  loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
   when:
     - item.1.from == inventory_hostname
     - (item.1.init | default(false)) | bool

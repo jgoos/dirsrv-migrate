@@ -100,6 +100,11 @@
   when: dirsrv_export_method == 'dsconf' and not (dirsrv_dsconf_supports_suffix | default(false)) and not ansible_check_mode
   tags: [export]
 
+# SECURITY NOTE: This is a fallback/test method. In production environments,
+# use dirsrv_export_method: 'dsconf' instead. If ldapsearch must be used,
+# ensure dirsrv_password is stored in Ansible Vault (group_vars/all/vault.yml)
+# and never committed to version control. Shell commands with passwords should
+# be avoided when possible; prefer command module with argv for better security.
 - name: Export LDIF via ldapsearch (fallback/test)
   ansible.builtin.shell: >-
     LDAPTLS_REQCERT=never

@@ -24,7 +24,7 @@
             ==
             ((item.value | default({})) | dict2items | map(attribute='value') | list | unique | length)
         fail_msg: "Duplicate replica IDs found for suffix {{ item.key }}"
-      with_dict: "{{ dirsrv_repl_replica_ids | default({}) }}"
+      loop: "{{ dirsrv_repl_replica_ids | default({}) | dict2items }}"
       when: dirsrv_repl_require_unique_replica_ids | bool
 
     - name: Health Checks | Validate agreements mapping (local outbound only)
@@ -34,9 +34,7 @@
           - item.1.from == inventory_hostname
           - item.1.from != item.1.to
         fail_msg: "Invalid agreement mapping: ensure targets exist and no self-links"
-      with_subelements:
-        - "{{ dirsrv_repl_agreements | dict2items }}"
-        - value
+      loop: "{{ dirsrv_repl_agreements | dict2items | subelements('value') }}"
       when: item.1.from == inventory_hostname
 
 - name: Health Checks | System readiness checks
