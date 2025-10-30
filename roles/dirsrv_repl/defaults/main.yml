@@ -159,7 +159,7 @@ dirsrv_advertised_hostname_final: >-
     dirsrv_advertised_hostname
       | default(
           (inventory_hostname)
-            if (dirsrv_target_type | default('container')) == 'container'
+            if (dirsrv_target_type | default('vm')) == 'container'
             else (ansible_fqdn | default(inventory_hostname))
         )
   }}
