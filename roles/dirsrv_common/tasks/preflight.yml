@@ -432,9 +432,10 @@
   when:
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
-    - (__podman_network_info is failed or (__podman_network_info.rc is defined and __podman_network_info.rc != 0) or __podman_network_info is skipped)
     - (dirsrv_target_type | default('vm')) == 'container'
     - (dirsrv_network_validate | default(true)) | bool
+    - __podman_network_info is defined
+    - (__podman_network_info is failed or (__podman_network_info.rc is defined and __podman_network_info.rc != 0) or __podman_network_info is skipped)
   tags: [preflight, ip_validation]
 
 
