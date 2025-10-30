@@ -1,6 +1,8 @@
 ---
 # Test-only vars for local compose environment
 dirsrv_password: "{{ vault_dirsrv_password | default('password') }}"
+# Explicitly set target type to container for development/testing
+dirsrv_target_type: container
 # For 389ds prebuilt containers (no systemd exposed), skip service control
 dirsrv_manage_service: false
 # Container instances are named 'localhost' in the 389ds image

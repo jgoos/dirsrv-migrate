@@ -187,7 +187,7 @@
   when:
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
-    - (dirsrv_target_type | default('container')) == 'container'
+    - (dirsrv_target_type | default('vm')) == 'container'
     - (dirsrv_network_validate | default(true)) | bool
   tags: [preflight, network_validation]
 
@@ -224,20 +224,23 @@
   changed_when: false
   failed_when: false  # Don't fail, use fallback
   when:
-    - (dirsrv_target_type | default('container')) == 'container'
+    - __podman_network_info is defined
+    - __podman_network_info is not skipped
+    - __podman_network_info.stdout is defined
+    - (dirsrv_target_type | default('vm')) == 'container'
     - (dirsrv_network_validate | default(true)) | bool
 
 - name: Preflight | Set container network mapping fact
   ansible.builtin.set_fact:
     __container_network_map: >-
-      {%- if __container_ip_extraction is defined and __container_ip_extraction.rc == 0 -%}
+      {%- if __container_ip_extraction is defined and __container_ip_extraction is not skipped and __container_ip_extraction.rc == 0 -%}
         {{ __container_ip_extraction.stdout | from_json }}
       {%- else -%}
-        {}  {# Fallback to empty dict when Podman inspection fails #}
+        {}  {# Fallback to empty dict when Podman inspection fails or is skipped #}
       {%- endif -%}
   when:
     - __container_ip_extraction is defined
-    - (dirsrv_target_type | default('container')) == 'container'
+    - (dirsrv_target_type | default('vm')) == 'container'
     - (dirsrv_network_validate | default(true)) | bool
   tags: [preflight, network_validation]
 
@@ -363,7 +366,7 @@
     - __container_network_map is defined
     - __dirsrv_unique_targets is defined
     - __dirsrv_unique_targets | length > 0
-    - (dirsrv_target_type | default('container')) == 'container'
+    - (dirsrv_target_type | default('vm')) == 'container'
     - (dirsrv_network_validate | default(true)) | bool
   tags: [preflight, network_validation]
 
@@ -429,9 +432,10 @@
   when:
     - dirsrv_repl_agreements is defined
     - dirsrv_repl_agreements | length > 0
-    - (__podman_network_info is failed or (__podman_network_info.rc is defined and __podman_network_info.rc != 0) or __podman_network_info is skipped)
-    - (dirsrv_target_type | default('container')) == 'container'
+    - (dirsrv_target_type | default('vm')) == 'container'
     - (dirsrv_network_validate | default(true)) | bool
+    - __podman_network_info is defined
+    - (__podman_network_info is failed or (__podman_network_info.rc is defined and __podman_network_info.rc != 0) or __podman_network_info is skipped)
   tags: [preflight, ip_validation]
 
 

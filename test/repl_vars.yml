@@ -1,6 +1,8 @@
 ---
 # Replication test variables for Podman compose lab
 
+# Explicitly set target type to container for development/testing
+dirsrv_target_type: container
 # Instances inside containers are named 'localhost' and listen on port 389
 dirsrv_instance: "localhost"
 dirsrv_password: "{{ vault_dirsrv_password | default('password') }}"

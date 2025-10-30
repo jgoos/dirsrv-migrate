@@ -63,7 +63,7 @@
               hostvars[agree.to].dirsrv_advertised_hostname
                 | default(
                     (agree.to)
-                      if (hostvars[agree.to].dirsrv_target_type | default('container')) == 'container'
+                      if (hostvars[agree.to].dirsrv_target_type | default('vm')) == 'container'
                       else (hostvars[agree.to].ansible_fqdn | default(agree.to))
                 )
             )
