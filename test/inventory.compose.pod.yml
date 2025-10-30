@@ -8,7 +8,7 @@ all:
           ansible_host: ds-s1
           ansible_user: root
           ansible_remote_tmp: /tmp/.ansible
-          ansible_python_interpreter: auto_silent
+          ansible_python_interpreter: auto
           ansible_become: false
           # ds tools in container live in PATH, no SSH needed
     dirsrv_target:
@@ -18,5 +18,5 @@ all:
           ansible_host: ds-c1
           ansible_user: root
           ansible_remote_tmp: /tmp/.ansible
-          ansible_python_interpreter: auto_silent
+          ansible_python_interpreter: auto
           ansible_become: false

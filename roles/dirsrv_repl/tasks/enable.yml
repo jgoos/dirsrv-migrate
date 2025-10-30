@@ -13,6 +13,7 @@
       {{ (dirsrv_repl_this_node.protocol | lower) ~ '://' ~ dirsrv_repl_this_node.host ~ ':' ~ dirsrv_repl_this_node.port }}
 
 # Test-only: enable DS logs to ensure access/audit present (best-effort)
+# NOTE: Uses LDAPI with EXTERNAL auth (no password in shell command)
 - name: Log | Enable access log (test-only)
   ansible.builtin.shell: |
     set -o pipefail
