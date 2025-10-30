@@ -326,34 +326,13 @@
     - dirsrv_repl_init_mode == 'online'
 
 - name: Agreements | Serial init per suffix (online)
-  vars:
-    ags: "{{ group.value }}"
-    suffix: "{{ group.key }}"
+  ansible.builtin.include_tasks: agreements_init_per_suffix.yml
   loop: "{{ (_dirsrv_init_groups | default({})) | dict2items }}"
   loop_control:
     loop_var: group
   when:
     - dirsrv_repl_init_mode == 'online'
     - not ansible_check_mode
-  block:
-    - name: Agreements | Init agreement and pause between inits (per-suffix)
-      loop: "{{ ags | enumerate | list }}"
-      loop_control:
-        loop_var: pair
-      when:
-        - ags | length > 0
-      block:
-        - name: Agreements | Initialize agreement (online)
-          directories.ds.ds_repl_init:
-            instance: "{{ dirsrv_repl_this_node.instance }}"
-            suffix: "{{ suffix }}"
-            agreement: "{{ pair.1.name }}"
-            timeout: "{{ dirsrv_repl_retry_settings.operation_timeouts.init_status_poll | default(300) }}"
-            poll_interval: "{{ dirsrv_repl_retry_settings.base_delay | default(1) }}"
-        - name: Agreements | Inter-init delay (avoid RUV lock contention)
-          ansible.builtin.pause:
-            seconds: "{{ dirsrv_repl_retry_settings.mesh_settings.agreement_serialization_delay | default(2) }}"
-          when: pair.0 < (ags | length) - 1
 
 - name: Agreements | Final health verification
   ansible.builtin.include_tasks: monitoring.yml

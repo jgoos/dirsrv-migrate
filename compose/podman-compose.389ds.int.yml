@@ -9,6 +9,7 @@ services:
   ds-s1:
     image: ${DS_IMAGE_REF}
     hostname: s1.dsnet.test
+    container_name: ds-s1
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
@@ -25,6 +26,7 @@ services:
   ds-s2:
     image: ${DS_IMAGE_REF}
     hostname: s2.dsnet.test
+    container_name: ds-s2
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
@@ -41,6 +43,7 @@ services:
   ds-c1:
     image: ${DS_IMAGE_REF}
     hostname: c1.dsnet.test
+    container_name: ds-c1
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com
@@ -57,6 +60,7 @@ services:
   ds-c2:
     image: ${DS_IMAGE_REF}
     hostname: c2.dsnet.test
+    container_name: ds-c2
     environment:
       - DS_DM_PASSWORD=${DIRSRV_PASSWORD:-password}
       - DS_SUFFIX_NAME=dc=example,dc=com

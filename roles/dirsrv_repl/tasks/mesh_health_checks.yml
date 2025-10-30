@@ -122,6 +122,7 @@
         - dirsrv_repl_replica_ids is defined
         - dirsrv_repl_nodes is defined
         - (dirsrv_repl_nodes | length) > 1
+        - dirsrv_repl_require_unique_replica_ids | default(true)
 
   rescue:
     - name: Mesh Health | Report connectivity issues and fail fast

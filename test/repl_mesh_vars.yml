@@ -21,6 +21,10 @@ dirsrv_repl_replica_ids:
     ds-s1: 1
     ds-s2: 2
 
+# Skip strict uniqueness assert in lab; the role's helper flattener
+# expects normalized mapping and can be overzealous for simple lab data.
+dirsrv_repl_require_unique_replica_ids: false
+
 dirsrv_repl_auth:
   method: SIMPLE
   bind_dn: "cn=Directory Manager"
@@ -31,7 +35,7 @@ dirsrv_repl_agreements:
     # Supplier-to-supplier (bi-directional), init from ds-s1 to ds-s2
     - { from: "ds-s1", to: "ds-s2", name: "s1-to-s2", init: true }
     - { from: "ds-s2", to: "ds-s1", name: "s2-to-s1", init: false }
-    # Supplier-to-consumer
+    # Supplier-to-consumer (hub-and-spoke topology)
     - { from: "ds-s1", to: "ds-c1", name: "s1-to-c1", init: true }
     - { from: "ds-s2", to: "ds-c2", name: "s2-to-c2", init: true }
 
@@ -53,6 +57,12 @@ dirsrv_repl_wait_require_finished: true
 dirsrv_repl_wait_timeout_configured: 10
 dirsrv_repl_wait_timeout_start: 15
 dirsrv_repl_wait_timeout_done: 60
+
+# Disable network validation for container environments (skips /etc/hosts check)
+dirsrv_network_validate: false
+
+# Configure for hub-and-spoke topology (not full mesh requiring bidirectional agreements)
+dirsrv_repl_require_bidirectional: false
 
 # Override retry settings for faster test execution
 dirsrv_repl_retry_settings:

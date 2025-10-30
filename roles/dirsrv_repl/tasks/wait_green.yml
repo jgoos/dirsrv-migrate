@@ -26,6 +26,18 @@
     dirsrv_artifact_root_effective: "{{ [playbook_dir, '.ansible', 'artifacts'] | path_join }}"
   when: dirsrv_artifact_root_effective is not defined
 
+- name: Wait | Compute agreements originating from this node
+  ansible.builtin.set_fact:
+    _dirsrv_my_agreements: >-
+      {{
+        (dirsrv_repl_agreements | default({}))
+          | dict2items
+          | map(attribute='value')
+          | flatten
+          | selectattr('from','equalto', inventory_hostname)
+          | list
+      }}
+
 - name: Wait | Agreements healthy via module
   directories.ds.ds_repl_wait:
     instance: "{{ dirsrv_repl_this_node.instance }}"
@@ -46,4 +58,6 @@
     debug: "{{ dirsrv_debug | default(false) }}"
     log_every: "{{ 1 if (dirsrv_debug | default(false)) else 5 }}"
   loop: "{{ dirsrv_repl_suffixes }}"
-  when: dirsrv_repl_suffixes | length > 0
+  when:
+    - dirsrv_repl_suffixes | length > 0
+    - (_dirsrv_my_agreements | length) > 0
