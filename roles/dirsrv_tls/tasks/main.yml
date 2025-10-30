@@ -92,6 +92,10 @@
       changed_when: false
       failed_when: tls_get_port.rc != 0
 
+    - name: TLS | Check if secure port needs to be set
+      ansible.builtin.set_fact:
+        tls_secure_port_needs_change: "{{ tls_get_port.stdout is not search('nsslapd-securePort:\\s*' + dirsrv_tls_secure_port) }}"
+
     - name: TLS | Enable secure port
       ansible.builtin.command:
         argv:
@@ -102,7 +106,7 @@
           - "nsslapd-securePort={{ dirsrv_tls_secure_port }}"
       register: tls_sec_port
       changed_when: tls_sec_port.rc == 0
-      when: tls_get_port.stdout is not search("nsslapd-securePort:\\s*{{ dirsrv_tls_secure_port }}")
+      when: tls_secure_port_needs_change
 
     - name: TLS | Read current nsSSLPersonalitySSL
       ansible.builtin.command:
@@ -116,6 +120,10 @@
       changed_when: false
       failed_when: tls_get_nick.rc != 0
 
+    - name: TLS | Check if certificate nickname needs to be set
+      ansible.builtin.set_fact:
+        tls_cert_nickname_needs_change: "{{ tls_get_nick.stdout is not search('nsSSLPersonalitySSL:\\s*' + dirsrv_tls_cert_nickname) }}"
+
     - name: TLS | Set certificate nickname (nsSSLPersonalitySSL)
       ansible.builtin.command:
         argv:
@@ -126,7 +134,7 @@
           - "nsSSLPersonalitySSL={{ dirsrv_tls_cert_nickname }}"
       register: tls_set_nick
       changed_when: tls_set_nick.rc == 0
-      when: tls_get_nick.stdout is not search("nsSSLPersonalitySSL:\\s*{{ dirsrv_tls_cert_nickname }}")
+      when: tls_cert_nickname_needs_change
 
     - name: TLS | Restart instance to apply settings (only if changed)
       ansible.builtin.command:
