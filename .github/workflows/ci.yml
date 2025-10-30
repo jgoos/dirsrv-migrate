@@ -27,7 +27,7 @@ jobs:
       run: ansible-lint roles/ site.yml --exclude collections/
 
     - name: Run yamllint
-      run: yamllint --exclude-dir=collections .
+      run: yamllint .
 
     - name: Run ruff
       run: ruff check .
