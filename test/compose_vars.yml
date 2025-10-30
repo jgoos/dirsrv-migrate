@@ -29,3 +29,6 @@ dsnet_s1_ip: "10.89.1.6"
 dsnet_s2_ip: "10.89.1.8"
 dsnet_c1_ip: "10.89.1.4"
 dsnet_c2_ip: "10.89.1.5"
+
+# Disable network validation for migration (not replication)
+dirsrv_network_validate: false

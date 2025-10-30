@@ -2,6 +2,8 @@
 # Replication test variables for Podman compose lab
 
 # Instances inside containers are named 'localhost' and listen on port 389
+dirsrv_instance: "localhost"
+dirsrv_password: "{{ vault_dirsrv_password | default('password') }}"
 dirsrv_repl_nodes:
   ds-s1:
     role: supplier

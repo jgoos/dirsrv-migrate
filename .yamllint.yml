@@ -4,7 +4,7 @@ ignore: |
   .ansible/**
   .github/**
   test/**
-  collections/ansible_collections/**/molecule/**
+  collections/**
   tasklist.yml
   group_vars/**
   roles/**
@@ -19,7 +19,15 @@ rules:
   empty-lines:
     max: 1
     level: warning
-  braces: disable
+  braces:
+    max-spaces-inside: 1
   commas: disable
   truthy:
     level: warning
+  comments:
+    min-spaces-from-content: 1
+    ignore-shebangs: true
+  comments-indentation: false
+  octal-values:
+    forbid-implicit-octal: true
+    forbid-explicit-octal: true

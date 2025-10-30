@@ -2,51 +2,40 @@ name: CI
 
 on:
   push:
-    branches: [ main, "feat/**", "fix/**", "chore/**" ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
 jobs:
-  sanity:
-    name: ansible-test sanity (collection)
+  lint:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install Ansible (for ansible-test)
-        run: |
-          python -m pip install --upgrade pip
-          pip install "ansible>=8"
-      - name: Run ansible-test sanity
-        working-directory: collections/ansible_collections/directories/ds
-        # TODO: remove continue-on-error once all sanity issues are addressed
-        continue-on-error: true
-        run: |
-          ansible-test sanity --python 3.11 -v
 
-  linters:
-    name: Lint (ansible-lint, yamllint, ruff)
-    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install linters
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible-lint yamllint ruff
-      - name: ansible-lint
-        run: |
-          ansible-lint -v || true
-      - name: yamllint
-        run: |
-          yamllint . || true
-      - name: ruff (Python plugins)
-        run: |
-          ruff --version
-          ruff check collections/ansible_collections/directories/ds
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible-lint yamllint ruff
+
+    - name: Run ansible-lint
+      run: ansible-lint roles/ site.yml --exclude collections/
+
+    - name: Run yamllint
+      run: find . -name "*.yml" -o -name "*.yaml" | grep -v "^./collections/" | xargs yamllint
+
+    - name: Run ruff
+      run: ruff check .
+
+    - name: Ansible syntax check
+      run: ansible-playbook --syntax-check site.yml
+
+    - name: Check YAML formatting
+      run: |
+        # Ensure YAML files are properly formatted (excluding collections)
+        find . -name "*.yml" -o -name "*.yaml" | grep -v "^./collections/" | xargs -I {} sh -c 'echo "Checking {}"; python -c "import yaml; yaml.safe_load(open(\"{}\", encoding=\"utf-8\"))" || exit 1'

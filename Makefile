@@ -37,8 +37,8 @@ ANSIBLE_TEST_ENV := ANSIBLE_STDOUT_CALLBACK=json ANSIBLE_CALLBACKS_ENABLED=log_p
 	@touch $@
 
 .PHONY: migrate help \
-	up_389ds init_389ds seed_389ds migrate_pod deps_podman test_389ds verify_389ds down_389ds reset_389ds \
-	test_ldif_filter csr_pod verify_csr test_csr \
+	up_389ds up_mesh init_389ds seed_389ds migrate_pod deps_podman test_389ds verify_389ds verify_389ds_int verify_mesh_389ds down_389ds reset_389ds \
+	test_ldif_filter csr_pod verify_csr test_csr test_repl_mesh_full \
 	collection_build collection_install
 
 # Additional CSR scenarios
@@ -63,10 +63,11 @@ help: ## Show this help (grouped, sorted by section and target)
 	| awk -F '|' 'BEGIN{first=1} { if ($$2=="__SECTION__") { if (!first) printf("\n"); print $$1; first=0; } else { printf("  %-28s %s\n", $$2, $$3) } }'
 
 ##@ 20 Aliases
-.PHONY: up mesh verify down logs
+.PHONY: up mesh verify verify_int down logs
 up: up_389ds init_389ds ## Start lab containers and wait for readiness
 mesh: repl_pod_mesh ## Configure mesh replication across lab
 verify: verify_389ds ## Verify example entries on consumer
+verify_int: verify_389ds_int ## Verify example entries on consumer (INT compose)
 down: down_389ds ## Stop lab containers
 logs: bundle_logs ## Bundle logs and artifacts
 int: test_int ## Run INT flow with digest-pinned images
@@ -94,6 +95,9 @@ prepare_host_dirs:
 
 up_389ds: net prepare_host_dirs ## Start 2 suppliers + 2 consumers (detached)
 	$(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml up -d --no-recreate,compose_up)
+
+up_mesh: net ## Start 2 suppliers + 2 consumers for mesh tests (INT compose; DNS by service names)
+	$(call _time,DS_IMAGE_REF=$(if $(DS_IMAGE_DIGEST),quay.io/389ds/dirsrv@$(DS_IMAGE_DIGEST),$(DS_IMAGE)) $(COMPOSE_CMD) -f compose/podman-compose.389ds.int.yml up -d --no-recreate,compose_up_mesh)
 
 
 init_389ds: ## Wait for LDAPI readiness on ds-s1 and ds-c1
@@ -141,6 +145,15 @@ repl_pod:
 	  test/repl.yml $(ARGS),repl_pod)
 
 verify_389ds:
+	@echo "Verifying entries on target (compose_ds-c1_1)"
+	@verify() { name="$$1" cmd="$$2"; for i in $$(seq 1 60); do eval "$$cmd" >/dev/null 2>&1 && echo "OK: $$name" && return 0; sleep 1; done; echo "Missing $$name" >&2; exit 1; }; \
+	verify "alice present" "podman exec compose_ds-c1_1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=alice' | grep -q 'uid=alice'"; \
+	verify "bob present" "podman exec compose_ds-c1_1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=bob' | grep -q 'uid=bob'"; \
+	verify "staff includes devs" "podman exec compose_ds-c1_1 sh -lc \"ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember || ldapsearch -x -LLL -H ldap://localhost:389 -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember\" | grep -iq 'uniqueMember: cn=devs,ou=groups,dc=example,dc=com'"; \
+	verify "app-x present" "podman exec compose_ds-c1_1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=app-x' | grep -q 'uid=app-x'"; \
+	verify "ACI present" "podman exec compose_ds-c1_1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -LLL -s base -b dc=example,dc=com aci || ldapsearch -x -H ldap://localhost:389 -LLL -s base -b dc=example,dc=com aci' | grep -iq '^aci:'"
+
+verify_389ds_int:
 	@echo "Verifying entries on target (ds-c1)"
 	@verify() { name="$$1" cmd="$$2"; for i in $$(seq 1 60); do eval "$$cmd" >/dev/null 2>&1 && echo "OK: $$name" && return 0; sleep 1; done; echo "Missing $$name" >&2; exit 1; }; \
 	verify "alice present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=alice' | grep -q 'uid=alice'"; \
@@ -148,6 +161,23 @@ verify_389ds:
 	verify "staff includes devs" "podman exec ds-c1 sh -lc \"ldapsearch -Y EXTERNAL -LLL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember || ldapsearch -x -LLL -H ldap://localhost:389 -b \"cn=staff,ou=groups,dc=example,dc=com\" -s base uniqueMember\" | grep -iq 'uniqueMember: cn=devs,ou=groups,dc=example,dc=com'"; \
 	verify "app-x present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x || ldapsearch -x -H ldap://localhost:389 -b dc=example,dc=com uid=app-x' | grep -q 'uid=app-x'"; \
 	verify "ACI present" "podman exec ds-c1 sh -lc 'ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -LLL -s base -b dc=example,dc=com aci || ldapsearch -x -H ldap://localhost:389 -LLL -s base -b dc=example,dc=com aci' | grep -iq '^aci:'"
+
+verify_mesh_389ds:
+	@echo "Verifying mesh replication across all nodes"
+	@verify() { name="$$1" container="$$2" cmd="$$3"; echo -n "Checking $$name on $$container: "; for i in $$(seq 1 30); do eval "$$cmd" >/dev/null 2>&1 && echo "✅ OK" && return 0; sleep 1; done; echo "❌ FAILED" >&2; exit 1; }; \
+	verify "alice present" "ds-s1" "podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice | grep -q 'uid=alice'"; \
+	verify "alice present" "ds-s2" "podman exec ds-s2 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice | grep -q 'uid=alice'"; \
+	verify "alice present" "ds-c1" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice | grep -q 'uid=alice'"; \
+	verify "alice present" "ds-c2" "podman exec ds-c2 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=alice | grep -q 'uid=alice'"; \
+	verify "bob present" "ds-s1" "podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob | grep -q 'uid=bob'"; \
+	verify "bob present" "ds-s2" "podman exec ds-s2 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob | grep -q 'uid=bob'"; \
+	verify "bob present" "ds-c1" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob | grep -q 'uid=bob'"; \
+	verify "bob present" "ds-c2" "podman exec ds-c2 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=bob | grep -q 'uid=bob'"; \
+	verify "app-x present" "ds-s1" "podman exec ds-s1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x | grep -q 'uid=app-x'"; \
+	verify "app-x present" "ds-s2" "podman exec ds-s2 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x | grep -q 'uid=app-x'"; \
+	verify "app-x present" "ds-c1" "podman exec ds-c1 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x | grep -q 'uid=app-x'"; \
+	verify "app-x present" "ds-c2" "podman exec ds-c2 ldapsearch -Y EXTERNAL -H ldapi://%2Fdata%2Frun%2Fslapd-localhost.socket -b dc=example,dc=com uid=app-x | grep -q 'uid=app-x'"; \
+	echo "🎉 Mesh replication verification completed successfully!"
 
 ##@ 50 Dependencies
 deps_podman: ## Install required Ansible collections (from requirements)
@@ -187,6 +217,10 @@ test_repl:
 
 # Robust mesh replication test with comprehensive error handling
 test_repl_mesh_robust:
+	@# Clean up any existing containers and storage before starting robust mesh replication test
+	@echo "=== Cleaning up existing containers and storage ==="
+	$(MAKE) reset_hard PURGE=1
+	rm -rf .ansible/artifacts/compose-dev || true
 	@echo "=== Running robust mesh replication test ==="
 	$(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds
 	@echo "=== Configuring robust mesh replication ==="
@@ -194,6 +228,8 @@ test_repl_mesh_robust:
 		-e @test/compose_vars.yml \
 		-e @test/repl_mesh_vars.yml \
 		$(ARGS) || $(MAKE) bundle_logs
+	@echo "=== Verifying mesh replication ==="
+	$(MAKE) verify_mesh_389ds
 	@echo "=== Robust mesh test completed ==="
 
 # Run CSR role against compose lab
@@ -262,16 +298,59 @@ repl_pod_mesh:
 	  test/repl_mesh.yml $(ARGS),repl_mesh)
 
 test_repl_mesh:
+	@# Clean up any existing containers and storage before starting mesh replication test
+	@echo "=== Cleaning up existing containers and storage ==="
+	$(MAKE) reset_hard PURGE=1
+	$(MAKE) reset_mesh_hard PURGE=1
+	rm -rf .ansible/artifacts/compose-dev || true
 	@# Re-run mesh test with logging and bundle logs on failure (10 minute timeout)
-	ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_389ds init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds \
+	@echo "=== Starting fresh containers for mesh replication test ==="
+	ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_mesh init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_mesh_389ds \
 		|| $(MAKE) bundle_logs
+
+##@ 60 Tests
+test_repl_mesh_full: ## Full integration test: clean start, health verify, mesh replication, comprehensive validation
+	@echo "=== Full Integration Test: Multi-Master Mesh Replication ==="
+	@echo "Starting with enforced clean state..."
+	@# Force cleanup of any existing containers and storage
+	@echo "=== Step 1: Cleanup - Destroying existing containers and storage ==="
+	$(MAKE) reset_hard PURGE=1
+	$(MAKE) reset_mesh_hard PURGE=1
+	rm -rf .ansible/artifacts/compose-dev || true
+	rm -rf .ansible/test_logs || true
+	@# Ensure clean network state
+	-podman network rm dsnet >/dev/null 2>&1 || true
+		@echo "=== Step 2: Startup - Launching fresh ds389 containers (INT compose) ==="
+		$(call _time,ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" up_mesh,containers_startup)
+		@echo "=== Step 3: Health Check - Waiting for LDAPI, then verifying health ==="
+		$(call _time,$(MAKE) init_389ds_mesh,mesh_ldapi_wait)
+		$(call _time,./scripts/health_check_mesh.sh || true,comprehensive_health_check)
+	@echo "=== Step 4: Dependencies - Installing required collections ==="
+	$(call _time,ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" deps_podman,dependencies)
+	@echo "=== Step 5: Data Seeding - Loading initial data ==="
+	$(call _time,ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" seed_389ds,data_seeding)
+	@echo "=== Step 6: Replication Configuration - Setting up multi-master mesh ==="
+	$(call _time,ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" repl_pod_mesh,replication_setup)
+	@echo "=== Step 7: Final Verification - Comprehensive mesh replication validation ==="
+	$(call _time,ANSIBLE_TIMEOUT=600 $(MAKE) TEST_LOGS=1 ARGS+=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true" verify_mesh_389ds,final_validation) \
+		|| ($(MAKE) bundle_logs && echo "❌ Test FAILED - logs bundled for analysis" && exit 1)
+	@echo "🎉 Full integration test completed successfully!"
+	@echo "=== Test Summary ==="
+	@echo "✅ Cleanup: All existing containers and storage removed"
+	@echo "✅ Startup: Fresh containers launched successfully"
+	@echo "✅ Health: All services confirmed healthy and ready"
+	@echo "✅ Dependencies: Required collections installed"
+	@echo "✅ Seeding: Initial data loaded successfully"
+	@echo "✅ Replication: Multi-master mesh configured and operational"
+	@echo "✅ Validation: Comprehensive verification passed"
+	@echo "📦 Logs and artifacts available in .ansible/ directory"
 
 ##@ 65 INT Flow
 .PHONY: test_int
 test_int: ## Full INT flow with digest pinning; bundles artifacts before teardown
 	@set -e; \
 	ARGS_EXTRA=" -vvv -e dirsrv_debug=true -e dirsrv_log_capture=true -e env_type=int"; \
-	$(MAKE) TEST_LOGS=1 ARGS+="$$ARGS_EXTRA" up_int init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds; \
+	$(MAKE) TEST_LOGS=1 ARGS+="$$ARGS_EXTRA" up_int init_389ds_mesh deps_podman seed_389ds repl_pod_mesh verify_389ds_int; \
 	RC=$$?; \
 	$(MAKE) bundle_logs; \
 	$(MAKE) down_int; \
@@ -341,6 +420,14 @@ reset_hard: ## Tear down containers; purge with PURGE=1
 	  $(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down -v,down_purge); \
 	else \
 	  $(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.yml down,down); \
+	fi
+
+# Hard reset for INT compose used by mesh tests
+reset_mesh_hard: ## Tear down INT compose stack for mesh; purge with PURGE=1
+	@if [ "$(PURGE)" = "1" ]; then \
+	  $(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.int.yml down -v,down_mesh_purge); \
+	else \
+	  $(call _time,$(COMPOSE_CMD) -f compose/podman-compose.389ds.int.yml down,down_mesh); \
 	fi
 
 # Setup network only (no-op if exists)

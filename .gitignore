@@ -34,6 +34,10 @@ collections/ansible_collections/directories/ds/*.tar.gz
 collections/ansible_collections/**/tests/output/
 collections/ansible_collections/**/tests/output/**
 
+# Exclude vendored external collections (only track directories.ds which we maintain)
+collections/ansible_collections/*/
+!collections/ansible_collections/directories/
+
 # Log files - never commit
 *.log
 *.log.*

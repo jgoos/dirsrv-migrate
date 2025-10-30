@@ -162,7 +162,7 @@
       ansible.builtin.assert:
         that:
           - item.rc == 0
-          - "successfully initialized" in (item.stdout | lower)
+          - "'successfully initialized' in (item.stdout | lower)"
         fail_msg: "Agreement {{ item.item }} is not healthy: {{ item.stdout }}"
       loop: "{{ agreement_health_check.results }}"
       when: agreement_health_check.results is defined
