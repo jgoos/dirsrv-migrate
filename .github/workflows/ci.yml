@@ -27,7 +27,7 @@ jobs:
       run: ansible-lint roles/ site.yml --exclude collections/
 
     - name: Run yamllint
-      run: yamllint .
+      run: find . -name "*.yml" -o -name "*.yaml" | grep -v "^./collections/" | xargs yamllint
 
     - name: Run ruff
       run: ruff check .
@@ -37,5 +37,5 @@ jobs:
 
     - name: Check YAML formatting
       run: |
-        # Ensure YAML files are properly formatted
-        find . -name "*.yml" -o -name "*.yaml" | xargs -I {} sh -c 'echo "Checking {}"; python -c "import yaml; yaml.safe_load(open(\"{}\"))" || exit 1'
+        # Ensure YAML files are properly formatted (excluding collections)
+        find . -name "*.yml" -o -name "*.yaml" | grep -v "^./collections/" | xargs -I {} sh -c 'echo "Checking {}"; python -c "import yaml; yaml.safe_load(open(\"{}\", encoding=\"utf-8\"))" || exit 1'
